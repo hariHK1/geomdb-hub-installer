@@ -1,0 +1,50 @@
+[server]
+home=/home/pycsw/pycsw
+url=http://localhost:8080/
+mimetype=application/xml; charset=UTF-8
+encoding=UTF-8
+language=id
+maxrecords=100
+pretty_print=false
+domaincounts=true
+domainquerytype=range
+spatial_ranking=true
+profiles=apiso
+timeout=30
+workers=2
+
+[logging]
+level=INFO
+logfile=/dev/stdout
+
+[metadata:main]
+identification_title=Geomdb Hub CSW (pycsw)
+identification_abstract=OGC Catalogue Service 2.0.2 — Katalog metadata geospasial JIGN/INA-SDI
+identification_keywords=metadata,geospasial,JIGN,INA-SDI,ISO19115
+identification_keywords_type=theme
+identification_fees=None
+identification_accessconstraints=None
+provider_name=Geomdb Hub
+provider_url=http://localhost:3000
+contact_name=Administrator
+contact_position=System Administrator
+contact_address=Jl. Jakarta No. 1
+contact_city=Jakarta
+contact_stateorprovince=DKI Jakarta
+contact_postalcode=10110
+contact_country=Indonesia
+contact_phone=+62-21-0000000
+contact_fax=+62-21-0000001
+contact_email=admin@Geomdbhub.go.id
+contact_url=http://localhost:3000
+contact_hours=09:00 - 17:00 WIB
+contact_role=pointOfContact
+
+[manager]
+transactions=true
+allowed_ips=*
+uploaddir=/tmp
+
+[repository]
+database=postgresql://geomdb:${POSTGRES_PASSWORD}@postgres:5432/Geomdb_pycsw
+table=records

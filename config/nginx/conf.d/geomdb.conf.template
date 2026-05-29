@@ -1,0 +1,21 @@
+# ─── Upstream — container Next.js ────────────────────────────────────────────
+upstream nextjs {
+    server app:${PORT_APP};
+    keepalive 16;
+}
+
+# ─── HTTP — redirect ke HTTPS + Let's Encrypt challenge ───────────────────────
+server {
+    listen 80;
+    server_name _;
+
+    # Let's Encrypt webroot challenge (certbot menulis ke sini)
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # Semua traffic lain → HTTPS
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}

@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.gitignore
+memory/
+deploy.log
+config/nginx/certs/
+*.log
+*.md
+.env
+.env.*
+# ext-serv runtime dirs
+.wwebjs_auth
+.wwebjs_cache
+ext_serv-main/uploads

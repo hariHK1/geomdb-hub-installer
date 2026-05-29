@@ -1,0 +1,304 @@
+# Log rotation default — semua service pakai 7×50MB = maks 350MB per container
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "7"
+
+services:
+  # ─── PostgreSQL with PostGIS ─────────────────────────────────────────────────
+  postgres:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: geomdb_postgres
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_DB: geomdb_hub
+      POSTGRES_USER: geomdb
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    ports:
+      - "${PORT_POSTGRES:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./config/postgres/init-pycsw.sh:/docker-entrypoint-initdb.d/01-init-pycsw.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geomdb -d geomdb_hub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── MinIO (object storage) ──────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: geomdb_minio
+    restart: unless-stopped
+    logging: *default-logging
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-geomdb_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}
+    ports:
+      - "${PORT_MINIO_API:-9000}:9000"
+      - "${PORT_MINIO_CONSOLE:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Redis (cache / session) ─────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: geomdb_redis
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
+    ports:
+      - "${PORT_REDIS:-6379}:6379"
+    volumes:
+      - redis_data:/data
+      - ./config/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: >
+      sh -c "redis-server /usr/local/etc/redis/redis.conf --requirepass $$REDIS_PASSWORD"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD --no-auth-warning ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ─── pycsw (OGC CSW 2.0.2 server) ───────────────────────────────────────────
+  # Pinned to 2.6.1 — v3.x changed the startup mechanism and config format
+  pycsw:
+    image: geopython/pycsw:2.6.1
+    container_name: geomdb_pycsw
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      PYCSW_CONFIG: /tmp/pycsw.cfg
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      PYCSW_URL: ${NEXT_PUBLIC_PYCSW_URL:-http://localhost:8080/}
+      CSW_TITLE: ${CSW_TITLE:-Geomdb Hub CSW}
+      CSW_ABSTRACT: ${CSW_ABSTRACT:-OGC Catalogue Service 2.0.2 - Katalog metadata geospasial}
+      CSW_KEYWORDS: ${CSW_KEYWORDS:-metadata,geospasial,JIGN,INA-SDI}
+      CSW_FEES: ${CSW_FEES:-None}
+      CSW_ACCESS_CONSTRAINTS: ${CSW_ACCESS_CONSTRAINTS:-None}
+      CSW_PROVIDER_NAME: ${CSW_PROVIDER_NAME:-Geomdb Hub}
+      CSW_CONTACT_NAME: ${CSW_CONTACT_NAME:-Administrator}
+      CSW_CONTACT_POSITION: ${CSW_CONTACT_POSITION:-System Administrator}
+      CSW_CONTACT_ADDRESS: ${CSW_CONTACT_ADDRESS:-}
+      CSW_CONTACT_CITY: ${CSW_CONTACT_CITY:-Jakarta}
+      CSW_CONTACT_PROVINCE: ${CSW_CONTACT_PROVINCE:-DKI Jakarta}
+      CSW_CONTACT_POSTALCODE: ${CSW_CONTACT_POSTALCODE:-}
+      CSW_CONTACT_PHONE: ${CSW_CONTACT_PHONE:-}
+      CSW_CONTACT_EMAIL: ${CSW_CONTACT_EMAIL:-}
+    volumes:
+      - ./config/pycsw/pycsw.cfg.tpl:/etc/pycsw/pycsw.cfg.tpl:ro
+      - ./config/pycsw/start.sh:/start.sh:ro
+    entrypoint: ["/bin/sh", "/start.sh"]
+    ports:
+      - "${PORT_PYCSW:-8080}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/?SERVICE=CSW&REQUEST=GetCapabilities')\" 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ─── External Service (email + WhatsApp via API) ────────────────────────────
+  ext-serv:
+    build:
+      context: .
+      dockerfile: ext_serv-main/Dockerfile
+      args:
+        WA_ENABLED: ${WA_ENABLED:-true}
+    image: ${GEOMDB_EXT_SERV_IMAGE:-geomdb-ext-serv}:${GEOMDB_IMAGE_TAG:-latest}
+    container_name: geomdb_ext_serv
+    restart: unless-stopped
+    logging: *default-logging
+    env_file:
+      - path: ./ext_serv-main/.env
+        required: false
+    environment:
+      - NODE_ENV=production
+      - PORT=${PORT_EXT_SERV:-3007}
+      - WA_ENABLED=${WA_ENABLED:-true}
+      - WA_SESSION_DIR=/app/.wwebjs_auth
+      - API_SECRET_KEY=${EXT_SERV_API_KEY:?EXT_SERV_API_KEY must be set in .env}
+      - ALLOWED_ORIGINS=${NEXT_PUBLIC_APP_URL:-http://localhost:3000},http://localhost:${PORT_EXT_SERV:-3007}
+    volumes:
+      - ext_serv_wa_session:/app/.wwebjs_auth
+      - ext_serv_wa_cache:/app/.wwebjs_cache
+      - ext_serv_uploads:/app/uploads
+    shm_size: '512mb'
+    cap_add:
+      - SYS_ADMIN
+    ports:
+      - "${PORT_EXT_SERV:-3007}:${PORT_EXT_SERV:-3007}"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:${PORT_EXT_SERV:-3007}/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ─── DB Migrator (runs once, then exits) ────────────────────────────────────
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    image: ${GEOMDB_MIGRATE_IMAGE:-geomdb-migrate}:${GEOMDB_IMAGE_TAG:-latest}
+    container_name: geomdb_migrate
+    restart: "no"
+    env_file: .env
+    environment:
+      DATABASE_URL: "postgresql://geomdb:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/geomdb_hub"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ─── Next.js App ──────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+      args:
+        PORT: "${PORT_APP:-3000}"
+        NEXT_PUBLIC_BASE_PATH: "${NEXT_PUBLIC_BASE_PATH:-}"
+        NEXT_PUBLIC_APP_URL: "${NEXT_PUBLIC_APP_URL:-}"
+        NEXT_PUBLIC_PYCSW_URL: "${NEXT_PUBLIC_PYCSW_URL:-}"
+        NEXT_PUBLIC_WA_ENABLED: "${WA_ENABLED:-true}"
+    image: ${GEOMDB_APP_IMAGE:-geomdb-app}:${GEOMDB_IMAGE_TAG:-latest}
+    container_name: geomdb_app
+    restart: unless-stopped
+    logging: *default-logging
+    # NET_ADMIN + /dev/net/tun: diperlukan WireGuard (Cloudflare WARP).
+    # Hapus jika WARP tidak digunakan.
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    # ── Cloudflare WARP (opsional) ──────────────────────────────────────────────
+    # Generate config sekali di luar container (jalankan di server host):
+    #   docker run --rm -v $(pwd)/wgcf:/out virbr3/wgcf:latest \
+    #     sh -c "wgcf register --accept-tos && wgcf generate && cp wgcf-profile.conf /out/"
+    # Lalu aktifkan mount di bawah ini:
+    # volumes:
+    #   - ./wgcf/wgcf-profile.conf:/etc/warp/wgcf-profile.conf:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${PORT_APP:-3000}:${PORT_APP:-3000}"
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "${PORT_APP:-3000}"
+      HOSTNAME: "0.0.0.0"
+      DATABASE_URL: "postgresql://geomdb:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/geomdb_hub"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379"
+      MINIO_URL: "http://minio:9000"
+      MINIO_ENDPOINT: "minio"
+      MINIO_PORT: "9000"
+      PYCSW_URL: "http://pycsw:8000"
+      EXT_SERV_URL: "http://ext-serv:${PORT_EXT_SERV:-3007}"
+      EXT_SERV_API_KEY: ${EXT_SERV_API_KEY:?EXT_SERV_API_KEY must be set in .env}
+      DOCKER_INTERNAL_HOST: "host.docker.internal"
+      # DB_POOL_MAX: default 10 — naikkan ke 20-50 untuk server dengan RAM ≥ 8GB
+      DB_POOL_MAX: "${DB_POOL_MAX:-10}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      pycsw:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+      ext-serv:
+        condition: service_healthy
+    networks:
+      - default
+      - share_network
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:'+process.env.PORT+(process.env.NEXT_PUBLIC_BASE_PATH||'')+'/api/ping').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+  # ─── Nginx (reverse proxy + SSL termination) ─────────────────────────────────
+  nginx:
+    image: nginx:1.30-alpine
+    container_name: geomdb_nginx
+    restart: unless-stopped
+    logging: *default-logging
+    # envsubst '${PORT_APP}' hanya substitusi PORT_APP — nginx vars ($host, $uri, dll) aman
+    command: >
+      /bin/sh -c "envsubst '$${PORT_APP}' < /etc/nginx/conf.d/geomdb.conf.template
+      > /etc/nginx/conf.d/geomdb.conf && nginx -g 'daemon off;'"
+    environment:
+      PORT_APP: "${PORT_APP:-3000}"
+    ports:
+      - "${PORT_HTTP:-80}:80"
+      - "${PORT_HTTPS:-443}:443"
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx/conf.d/geomdb.conf.template:/etc/nginx/conf.d/geomdb.conf.template:ro
+      - ./config/nginx/conf.d/geomdb-ssl.conf:/etc/nginx/conf.d/geomdb-ssl.conf:ro
+      - ./config/nginx/conf.d/real-ip.conf:/etc/nginx/conf.d/real-ip.conf:ro
+      - ./config/nginx/certs:/etc/nginx/certs:ro
+      - certbot_www:/var/www/certbot:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Certbot (Let's Encrypt) ──────────────────────────────────────────────
+  # Aktifkan dengan: docker compose --profile certbot up certbot
+  certbot:
+    image: certbot/certbot:latest
+    container_name: geomdb_certbot
+    profiles: ["certbot"]
+    volumes:
+      - certbot_etc:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+      - ./config/nginx/certs:/certs
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
+
+volumes:
+  postgres_data:
+  minio_data:
+  redis_data:
+  nginx_logs:
+  certbot_etc:
+  certbot_www:
+  ext_serv_wa_session:
+  ext_serv_wa_cache:
+  ext_serv_uploads:
+
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${GEOMDB_SUBNET:-192.168.200.0/24}
+  # Join ke network geoportal agar nginx geoportal bisa proxy ke geomdb_app.
+  # Hapus/comment jika geomdb tidak dijalankan bersama geoportal.
+  share_network:
+    external: true
+    name: ${GEOPORTAL_NETWORK:-geonode_default}
