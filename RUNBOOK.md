@@ -183,7 +183,7 @@ docker exec geomdb_redis redis-cli -a $REDIS_PASSWORD keys "user:jti:*" | \
    docker compose logs --no-log-prefix app > /tmp/incident_$(date +%Y%m%d_%H%M%S).log
    ```
 3. Preserve evidence sebelum restart/cleanup
-4. Hubungi kontak keamanan: `geometadataindonesia@gmail.com`
+4. Hubungi kontak keamanan instansi (lihat `/.well-known/security.txt`)
 5. Laporkan ke BSSN/CSIRT jika melibatkan data pemerintah
 
 ---
@@ -203,6 +203,6 @@ docker exec geomdb_redis redis-cli -a $REDIS_PASSWORD keys "user:jti:*" | \
 
 | Peran | Kontak |
 |-------|--------|
-| Tim IT | geometadataindonesia@gmail.com |
+| Tim IT | (isi kontak tim IT instansi) |
 | Keamanan BSSN/CSIRT | csirt@bssn.go.id |
 | Vendor Hosting | (isi sesuai instansi) |
