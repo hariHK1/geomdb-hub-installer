@@ -24,8 +24,8 @@ newgrp docker
 ### Mode 1: Registry (butuh internet)
 
 ```bash
-git clone -b installer https://github.com/hariHK1/geomdb-hub.git
-cd geomdb-hub
+git clone https://github.com/hariHK1/geomdb-hub-installer.git
+cd geomdb-hub-installer
 bash deploy.sh
 ```
 
