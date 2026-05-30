@@ -2318,7 +2318,9 @@ EXTENV
   echo -e "  • ${C}ext_serv-main/.env${NC}   — ext-serv (email + WhatsApp)"
   echo ""
   echo -e "  ${DIM}Langkah selanjutnya:${NC}"
-  echo -e "  ${DIM}  • Deploy lokal  → menu 3${NC}"
+  if ! _is_installer_mode; then
+    echo -e "  ${DIM}  • Deploy lokal  → menu 3${NC}"
+  fi
   echo -e "  ${DIM}  • Deploy server → menu 4 (lalu atur SSL di menu 8)${NC}"
 }
 
