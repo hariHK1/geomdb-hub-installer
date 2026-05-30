@@ -2389,7 +2389,7 @@ main_menu() {
       9) fn_generate_env ;;
       1) [[ "$_has_git" == "true" ]] && fn_switch_branch || warn "Menu ini hanya tersedia di mode development." ;;
       2) [[ "$_has_git" == "true" ]] && fn_pull         || warn "Menu ini hanya tersedia di mode development." ;;
-      3) fn_deploy_local ;;
+      3) _is_installer_mode && warn "Deploy lokal tidak tersedia di installer mode (butuh source code). Gunakan menu 4." || fn_deploy_local ;;
       4) fn_deploy ;;
       r|R) fn_start_containers ;;
       5) fn_clean_docker ;;
