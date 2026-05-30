@@ -2232,6 +2232,10 @@ MAINENV
   ok "Berhasil menulis .env"
 
   # ── Tulis ext_serv-main/.env ──────────────────────────────────────────────
+  # Di installer mode folder ext_serv-main/ tidak ada (tanpa source), tapi file
+  # .env tetap diperlukan — docker-compose memuatnya via env_file untuk
+  # SWAGGER_USER, UI_USERNAME, JWT_SECRET, PUPPETEER_EXECUTABLE_PATH, dll.
+  mkdir -p ext_serv-main
   cat > ext_serv-main/.env <<EXTENV
 # ════════════════════════════════════════════════════════════
 #  ext-serv — Environment Configuration
