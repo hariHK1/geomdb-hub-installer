@@ -112,12 +112,9 @@ services:
       start_period: 20s
 
   # ─── External Service (email + WhatsApp via API) ────────────────────────────
+  # Image prebuilt — di-pull dari registry atau di-load dari tarball offline.
+  # Source ext_serv-main/ TIDAK diperlukan di installer (image sudah jadi).
   ext-serv:
-    build:
-      context: .
-      dockerfile: ext_serv-main/Dockerfile
-      args:
-        WA_ENABLED: ${WA_ENABLED:-true}
     image: ${GEOMDB_EXT_SERV_IMAGE:-geomdb-ext-serv}:${GEOMDB_IMAGE_TAG:-latest}
     container_name: geomdb_ext_serv
     restart: unless-stopped
@@ -149,11 +146,8 @@ services:
       start_period: 30s
 
   # ─── DB Migrator (runs once, then exits) ────────────────────────────────────
+  # Image prebuilt — di-pull dari registry atau di-load dari tarball offline.
   migrate:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: migrator
     image: ${GEOMDB_MIGRATE_IMAGE:-geomdb-migrate}:${GEOMDB_IMAGE_TAG:-latest}
     container_name: geomdb_migrate
     restart: "no"
@@ -165,17 +159,9 @@ services:
         condition: service_healthy
 
   # ─── Next.js App ──────────────────────────────────────────────────────────────
+  # Image prebuilt — di-pull dari registry atau di-load dari tarball offline.
+  # NEXT_PUBLIC_* sudah di-bake ke image saat build oleh maintainer.
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runner
-      args:
-        PORT: "${PORT_APP:-3000}"
-        NEXT_PUBLIC_BASE_PATH: "${NEXT_PUBLIC_BASE_PATH:-}"
-        NEXT_PUBLIC_APP_URL: "${NEXT_PUBLIC_APP_URL:-}"
-        NEXT_PUBLIC_PYCSW_URL: "${NEXT_PUBLIC_PYCSW_URL:-}"
-        NEXT_PUBLIC_WA_ENABLED: "${WA_ENABLED:-true}"
     image: ${GEOMDB_APP_IMAGE:-geomdb-app}:${GEOMDB_IMAGE_TAG:-latest}
     container_name: geomdb_app
     restart: unless-stopped
