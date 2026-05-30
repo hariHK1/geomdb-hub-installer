@@ -58,6 +58,52 @@ Saat wizard meminta cara instalasi, pilih **File installer**.
 
 ---
 
+## Mengubah Konfigurasi (.env)
+
+Di installer mode, image **sudah jadi (prebuilt)** — Anda tidak melakukan build di server.
+Cara menerapkan perubahan `.env` tergantung jenis variabelnya.
+
+### A. Variabel Runtime — cukup restart (TANPA rebuild)
+
+Mayoritas variabel dibaca saat container **start**. Edit `.env`, lalu jalankan ulang:
+
+```bash
+nano .env                    # ubah nilai
+docker compose up -d         # recreate container dengan env baru
+```
+
+Termasuk dalam kategori ini:
+- `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `MINIO_ROOT_PASSWORD`, `EXT_SERV_API_KEY`
+- `SYSTEM_CERT_P12_PATH`, `SYSTEM_CERT_PASSWORD` (auto-TTE)
+- `DB_POOL_MAX`, port-port (`PORT_APP`, dll.)
+- Konfigurasi SMTP, OTP, WhatsApp — **ini dikonfigurasi via UI Admin → Pengaturan Org.**, bukan `.env`
+
+> Mengubah `POSTGRES_PASSWORD`/`REDIS_PASSWORD`/`MINIO_ROOT_PASSWORD` setelah data ada
+> akan memutus koneksi ke data lama. Jangan ubah password storage setelah produksi
+> kecuali Anda juga mereset/migrasi volume-nya.
+
+### B. Variabel `NEXT_PUBLIC_*` — TIDAK bisa diubah via .env
+
+Empat variabel ini **di-bake ke dalam image** saat build (di-inline ke bundle JavaScript browser):
+- `NEXT_PUBLIC_APP_URL`
+- `NEXT_PUBLIC_BASE_PATH`
+- `NEXT_PUBLIC_PYCSW_URL`
+- `NEXT_PUBLIC_WA_ENABLED`
+
+Mengeditnya di `.env` **tidak berpengaruh** karena image sudah dikompilasi. Untuk mengubahnya:
+
+1. **Minta image baru ke maintainer** — maintainer build ulang dengan nilai yang benar
+   (`bash scripts/make-release.sh`), lalu kirim `geomdb-hub-vX.Y.Z-images.tar.gz` baru.
+2. **Mode registry**: pilih varian image yang sesuai:
+   - `app-standalone` — untuk domain root (`https://domain.com`)
+   - `app-geoportal` — untuk sub-path `/geomdb-hub` (`https://domain.com/geomdb-hub`)
+
+   deploy.sh memilih otomatis berdasarkan apakah `GEONODE_NETWORK` diset.
+
+> **Ringkas:** ganti domain/base-path = butuh image baru. Ganti password/secret/cert = cukup `docker compose up -d`.
+
+---
+
 ## Update Versi Baru
 
 ### Mode registry:
