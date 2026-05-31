@@ -2127,8 +2127,10 @@ MINIO_ROOT_PASSWORD="${MINIO_PASS}"
 
 # ─── Redis ───────────────────────────────────────────────────
 REDIS_PASSWORD="${REDIS_PASS}"
-REDIS_URL="redis://localhost:${P_REDIS}"
-# Di Docker: di-override ke redis://:password@redis:6379
+# Sertakan password di URL — Redis dijalankan dengan --requirepass.
+# Tanpa ini, app yang dijalankan langsung (npm, di luar Docker) gagal NOAUTH.
+REDIS_URL="redis://:${REDIS_PASS}@localhost:${P_REDIS}"
+# Di Docker: di-override ke redis://:password@redis:6379 (lihat docker-compose.yml)
 
 # ─── MinIO ───────────────────────────────────────────────────
 MINIO_URL="http://localhost:${P_MINIO}"
