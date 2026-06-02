@@ -130,4 +130,4 @@ docker compose up -d
 4. Buat akun Walidata, Pemeriksa, Produsen
 
 Lihat [README.md](README.md) untuk dokumentasi lengkap alur bisnis dan fitur.
-Lihat [RUNBOOK.md](RUNBOOK.md) untuk prosedur penanganan insiden.
+Prosedur penanganan insiden (runbook) diberikan terpisah kepada operator.
