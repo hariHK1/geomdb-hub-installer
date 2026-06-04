@@ -712,6 +712,51 @@ location /geomdb-hub/ {
 
 Sesuaikan `/geomdb-hub/` dengan nilai `NEXT_PUBLIC_BASE_PATH` di `.env` Anda.
 
+#### (Opsional) Hardening CSP — hapus `script-src 'unsafe-inline'`
+
+Aplikasi default mengirim CSP statis ber-`'unsafe-inline'` (akar: halaman Next
+di-prerender statis → nonce tak bisa ditempel di app). Untuk menaikkan skor VA,
+nginx GeoNode bisa **menstempel nonce per-request** ke setiap `<script>` sehingga
+`'unsafe-inline'` dapat dihapus. Ganti location di atas dengan:
+
+```nginx
+# Pengecualian PDF QC/QE (boleh di-iframe internal) — taruh DI ATAS /geomdb-hub/
+location ~ ^/geomdb-hub/api/metadata/[^/]+/qcqe/pdf$ {
+    proxy_pass http://geomdb_app:3000;
+    proxy_set_header Host $host;
+    proxy_hide_header Content-Security-Policy;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; frame-ancestors 'self'" always;
+}
+
+location /geomdb-hub/ {
+    # Blok probe Server Action (app tak memakai Server Action — semua via /api/*).
+    # Cegah error log "Failed to find Server Action". HAPUS jika mulai pakai Server Action.
+    if ($http_next_action) { return 400; }
+
+    proxy_pass http://geomdb_app:3000/geomdb-hub/;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # CSP nonce: $request_id = nonce acak per-request
+    proxy_hide_header Content-Security-Policy;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'nonce-$request_id' 'strict-dynamic' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' wss:; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests" always;
+    # add_header di location menggugurkan add_header parent → re-deklarasi yang penting:
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    add_header X-Content-Type-Options nosniff always;
+
+    # sub_filter butuh respons tak ter-kompres dari upstream
+    proxy_set_header Accept-Encoding "";
+    sub_filter_once  off;
+    sub_filter_types text/html;
+    sub_filter '<script' '<script nonce="$request_id"';
+}
+```
+
+**Catatan:** `style-src 'unsafe-inline'` tetap (atribut `style={}` tak bisa di-nonce);
+pastikan `gzip on` di nginx GeoNode; wajib `nginx -t` + smoke test login & preview PDF.
+
 ### 3. Verifikasi
 
 ```bash
