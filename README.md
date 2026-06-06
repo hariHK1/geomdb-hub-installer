@@ -745,6 +745,8 @@ location /geomdb-hub/ {
     # add_header di location menggugurkan add_header parent → re-deklarasi yang penting:
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
     add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
 
     # sub_filter butuh respons tak ter-kompres dari upstream
     proxy_set_header Accept-Encoding "";
