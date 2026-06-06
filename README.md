@@ -741,7 +741,7 @@ location /geomdb-hub/ {
 
     # CSP nonce: $request_id = nonce acak per-request
     proxy_hide_header Content-Security-Policy;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'nonce-$request_id' 'strict-dynamic' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' wss:; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'nonce-$request_id' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' wss:; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests" always;
     # add_header di location menggugurkan add_header parent → re-deklarasi yang penting:
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
     add_header X-Content-Type-Options nosniff always;
