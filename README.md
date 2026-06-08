@@ -728,6 +728,24 @@ location ~ ^/geomdb-hub/api/metadata/[^/]+/qcqe/pdf$ {
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; frame-ancestors 'self'" always;
 }
 
+# Dokumen PDF (QC/QE + SPD/KAK/Pedoman) — boleh di-embed iframe internal.
+# Regex diprioritaskan di atas prefix /geomdb-hub/. frame-ancestors 'self'
+# menggantikan 'none' agar preview PDF di halaman Pemeriksa & Walidata tak terblokir.
+# (Sesuaikan port upstream dengan punya Anda — mis. 3000/3001.)
+location ~ ^/geomdb-hub/api/metadata/[^/]+/(qcqe/pdf|pemeriksa/spd)$ {
+    proxy_pass http://geomdb_app:3000;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    proxy_hide_header Content-Security-Policy;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; frame-ancestors 'self'; upgrade-insecure-requests" always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+}
+
 location /geomdb-hub/ {
     # Blok probe Server Action (app tak memakai Server Action — semua via /api/*).
     # Cegah error log "Failed to find Server Action". HAPUS jika mulai pakai Server Action.
