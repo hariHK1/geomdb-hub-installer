@@ -2141,7 +2141,7 @@ MINIO_BUCKET="geomdb-hub"
 
 # ─── pycsw ───────────────────────────────────────────────────
 PYCSW_URL="http://localhost:${P_PYCSW}"
-NEXT_PUBLIC_PYCSW_URL="http://localhost:${P_PYCSW}"
+NEXT_PUBLIC_PYCSW_URL="${FULL_APP_URL}/csw"
 # Di Docker: di-override ke http://pycsw:8000
 # Untuk production, NEXT_PUBLIC_PYCSW_URL harus URL yang bisa diakses browser.
 
