@@ -296,7 +296,9 @@ _apply_install_method() {
       if [[ ${#tarfiles[@]} -eq 0 ]]; then
         warn "Tidak ada file geomdb-hub-*.tar.gz di folder ini."
         echo ""
-        local _ghrepo="${GEOMDB_GH_REPO:-hariHK1/geomdb-hub}"
+        # Default: repo PUBLIK geomdb-hub-installer → unduh anonim tanpa token.
+        # Override ke repo lain (mis. privat) via env GEOMDB_GH_REPO bila perlu.
+        local _ghrepo="${GEOMDB_GH_REPO:-hariHK1/geomdb-hub-installer}"
         echo -e "  ${W}Unduh otomatis dari GitHub Releases?${NC}"
         echo -e "  ${DIM}https://github.com/${_ghrepo}/releases${NC}"
         read -rp "  Unduh sekarang? [Y/n]: " _dl
@@ -304,11 +306,11 @@ _apply_install_method() {
           err "Dibatalkan. Salin geomdb-hub-*.tar.gz ke folder ini, atau unduh manual dari Releases."
           return 1
         fi
-        # PAT diminta DULU — repo geomdb-hub PRIVAT, dibutuhkan untuk deteksi versi
-        # MAUPUN unduh. Kosongkan hanya jika rilis berada di repo publik.
-        echo -e "  ${DIM}Repo rilis privat → perlu GitHub Personal Access Token (scope: repo).${NC}"
+        # Rilis di repo publik → token TIDAK diperlukan. Hanya isi PAT bila Anda
+        # menunjuk repo privat via GEOMDB_GH_REPO (butuh scope repo / Contents:Read).
+        echo -e "  ${DIM}Rilis publik → biarkan PAT kosong. Isi hanya bila repo rilis privat.${NC}"
         local _ghtoken _auth=()
-        read -rsp "  GitHub PAT (kosongkan jika rilis publik): " _ghtoken; echo
+        read -rsp "  GitHub PAT (kosongkan untuk rilis publik): " _ghtoken; echo
         [[ -n "$_ghtoken" ]] && _auth=(-H "Authorization: token ${_ghtoken}")
 
         # Deteksi tag rilis terbaru via GitHub API (terautentikasi bila token diisi)
