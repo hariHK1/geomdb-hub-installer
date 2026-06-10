@@ -304,12 +304,26 @@ _apply_install_method() {
           err "Dibatalkan. Salin geomdb-hub-*.tar.gz ke folder ini, atau unduh manual dari Releases."
           return 1
         fi
-        # Deteksi tag rilis terbaru via GitHub API
-        local _tag
-        _tag=$(curl -fsSL "https://api.github.com/repos/${_ghrepo}/releases/latest" 2>/dev/null \
+        # PAT diminta DULU — repo geomdb-hub PRIVAT, dibutuhkan untuk deteksi versi
+        # MAUPUN unduh. Kosongkan hanya jika rilis berada di repo publik.
+        echo -e "  ${DIM}Repo rilis privat → perlu GitHub Personal Access Token (scope: repo).${NC}"
+        local _ghtoken _auth=()
+        read -rsp "  GitHub PAT (kosongkan jika rilis publik): " _ghtoken; echo
+        [[ -n "$_ghtoken" ]] && _auth=(-H "Authorization: token ${_ghtoken}")
+
+        # Deteksi tag rilis terbaru via GitHub API (terautentikasi bila token diisi)
+        local _tag _httpcode
+        _tag=$(curl -fsSL "${_auth[@]}" "https://api.github.com/repos/${_ghrepo}/releases/latest" 2>/dev/null \
                  | grep -oE '"tag_name":[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
         if [[ -z "$_tag" ]]; then
-          read -rp "  Gagal deteksi versi terbaru. Masukkan tag rilis (mis. v0.1.3): " _tag
+          # Tampilkan kode HTTP agar jelas penyebabnya (401 token salah / 404 tak ada akses)
+          _httpcode=$(curl -s -o /dev/null -w "%{http_code}" "${_auth[@]}" "https://api.github.com/repos/${_ghrepo}/releases/latest" 2>/dev/null)
+          warn "Gagal deteksi versi terbaru (GitHub HTTP ${_httpcode:-?})."
+          case "$_httpcode" in
+            401) echo -e "  ${DIM}→ Token salah/kadaluarsa.${NC}" ;;
+            404) echo -e "  ${DIM}→ Token tak punya akses ke repo privat (scope 'repo' kurang).${NC}" ;;
+          esac
+          read -rp "  Masukkan tag rilis manual (mis. v0.1.3): " _tag
         else
           read -rp "  Versi terbaru: ${_tag} — Enter untuk pakai, atau ketik tag lain: " _tsel
           _tag="${_tsel:-$_tag}"
@@ -320,11 +334,6 @@ _apply_install_method() {
         read -rp "  Varian [geoportal] (geoportal=sub-path /geomdb-hub, standalone=root): " _variant
         _variant="${_variant:-geoportal}"
         local _asset="geomdb-hub-${_tag}-${_variant}-installer.tar.gz"
-        # Repo rilis (geomdb-hub) PRIVAT → unduh asset butuh PAT, sama seperti login
-        # registry. Kosongkan token jika rilis berada di repo publik.
-        echo -e "  ${DIM}Repo rilis privat → perlu GitHub Personal Access Token (scope: repo).${NC}"
-        local _ghtoken
-        read -rsp "  GitHub PAT (kosongkan jika rilis publik): " _ghtoken; echo
         info "Mengunduh ${_asset} (bisa beberapa menit)..."
         if [[ -n "$_ghtoken" ]]; then
           # Privat: resolve asset id via API, lalu unduh via endpoint assets (octet-stream)
