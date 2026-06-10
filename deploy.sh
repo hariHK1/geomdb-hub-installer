@@ -294,9 +294,54 @@ _apply_install_method() {
       local tarfiles=()
       mapfile -t tarfiles < <(ls geomdb-hub-*.tar.gz 2>/dev/null || true)
       if [[ ${#tarfiles[@]} -eq 0 ]]; then
-        err "Tidak ada file geomdb-hub-*.tar.gz di folder ini."
-        err "Download installer dari: GitHub → Releases → geomdb-hub-vX.Y.Z-*.tar.gz"
-        return 1
+        warn "Tidak ada file geomdb-hub-*.tar.gz di folder ini."
+        echo ""
+        local _ghrepo="${GEOMDB_GH_REPO:-hariHK1/geomdb-hub}"
+        echo -e "  ${W}Unduh otomatis dari GitHub Releases?${NC}"
+        echo -e "  ${DIM}https://github.com/${_ghrepo}/releases${NC}"
+        read -rp "  Unduh sekarang? [Y/n]: " _dl
+        if [[ "${_dl,,}" =~ ^n ]]; then
+          err "Dibatalkan. Salin geomdb-hub-*.tar.gz ke folder ini, atau unduh manual dari Releases."
+          return 1
+        fi
+        # Deteksi tag rilis terbaru via GitHub API
+        local _tag
+        _tag=$(curl -fsSL "https://api.github.com/repos/${_ghrepo}/releases/latest" 2>/dev/null \
+                 | grep -oE '"tag_name":[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
+        if [[ -z "$_tag" ]]; then
+          read -rp "  Gagal deteksi versi terbaru. Masukkan tag rilis (mis. v0.1.3): " _tag
+        else
+          read -rp "  Versi terbaru: ${_tag} — Enter untuk pakai, atau ketik tag lain: " _tsel
+          _tag="${_tsel:-$_tag}"
+        fi
+        [[ -z "$_tag" ]] && { err "Tag rilis kosong."; return 1; }
+        # Varian: geoportal (sub-path /geomdb-hub) atau standalone (root)
+        local _variant
+        read -rp "  Varian [geoportal] (geoportal=sub-path /geomdb-hub, standalone=root): " _variant
+        _variant="${_variant:-geoportal}"
+        local _asset="geomdb-hub-${_tag}-${_variant}-installer.tar.gz"
+        local _url="https://github.com/${_ghrepo}/releases/download/${_tag}/${_asset}"
+        info "Mengunduh ${_asset} (bisa beberapa menit)..."
+        if command -v curl &>/dev/null; then
+          curl -fL --retry 3 -o "$_asset" "$_url" || { err "Gagal mengunduh dari ${_url}. Cek tag/varian/koneksi."; rm -f "$_asset"; return 1; }
+        elif command -v wget &>/dev/null; then
+          wget -O "$_asset" "$_url" || { err "Gagal mengunduh dari ${_url}. Cek tag/varian/koneksi."; rm -f "$_asset"; return 1; }
+        else
+          err "curl/wget tidak tersedia untuk mengunduh."; return 1
+        fi
+        gzip -t "$_asset" 2>/dev/null || { err "File terunduh tidak valid (kemungkinan tag/varian salah)."; rm -f "$_asset"; return 1; }
+        info "Mengekstrak image bundle dari installer..."
+        tar -xzf "$_asset"
+        local _img
+        _img=$(ls "geomdb-hub-${_tag}/geomdb-hub-${_tag}-${_variant}.tar.gz" 2>/dev/null | head -1)
+        if [[ -z "$_img" ]]; then
+          err "Image bundle tidak ditemukan di dalam ${_asset}."; return 1
+        fi
+        cp "$_img" .
+        rm -f "$_asset"; rm -rf "geomdb-hub-${_tag}"
+        ok "Image bundle siap: $(basename "$_img")"
+        mapfile -t tarfiles < <(ls geomdb-hub-*.tar.gz 2>/dev/null || true)
+        [[ ${#tarfiles[@]} -eq 0 ]] && { err "Image bundle tidak ditemukan setelah unduh."; return 1; }
       fi
       local tarfile="${tarfiles[0]}"
       if [[ ${#tarfiles[@]} -gt 1 ]]; then
