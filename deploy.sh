@@ -320,14 +320,37 @@ _apply_install_method() {
         read -rp "  Varian [geoportal] (geoportal=sub-path /geomdb-hub, standalone=root): " _variant
         _variant="${_variant:-geoportal}"
         local _asset="geomdb-hub-${_tag}-${_variant}-installer.tar.gz"
-        local _url="https://github.com/${_ghrepo}/releases/download/${_tag}/${_asset}"
+        # Repo rilis (geomdb-hub) PRIVAT → unduh asset butuh PAT, sama seperti login
+        # registry. Kosongkan token jika rilis berada di repo publik.
+        echo -e "  ${DIM}Repo rilis privat → perlu GitHub Personal Access Token (scope: repo).${NC}"
+        local _ghtoken
+        read -rsp "  GitHub PAT (kosongkan jika rilis publik): " _ghtoken; echo
         info "Mengunduh ${_asset} (bisa beberapa menit)..."
-        if command -v curl &>/dev/null; then
-          curl -fL --retry 3 -o "$_asset" "$_url" || { err "Gagal mengunduh dari ${_url}. Cek tag/varian/koneksi."; rm -f "$_asset"; return 1; }
-        elif command -v wget &>/dev/null; then
-          wget -O "$_asset" "$_url" || { err "Gagal mengunduh dari ${_url}. Cek tag/varian/koneksi."; rm -f "$_asset"; return 1; }
+        if [[ -n "$_ghtoken" ]]; then
+          # Privat: resolve asset id via API, lalu unduh via endpoint assets (octet-stream)
+          local _rel _aid
+          _rel=$(curl -fsSL -H "Authorization: token ${_ghtoken}" \
+                   "https://api.github.com/repos/${_ghrepo}/releases/tags/${_tag}" 2>/dev/null)
+          [[ -z "$_rel" ]] && { err "Gagal akses rilis ${_tag}. Cek token (scope repo) & tag."; return 1; }
+          if command -v python3 &>/dev/null; then
+            _aid=$(printf '%s' "$_rel" | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((a['id'] for a in d.get('assets',[]) if a['name']=='${_asset}'),''))" 2>/dev/null)
+          else
+            _aid=$(printf '%s' "$_rel" | grep -B5 "\"name\": \"${_asset}\"" | grep -oE '"id": [0-9]+' | head -1 | grep -oE '[0-9]+')
+          fi
+          [[ -z "$_aid" ]] && { err "Asset ${_asset} tidak ditemukan di rilis ${_tag} (cek varian)."; return 1; }
+          curl -fL -H "Authorization: token ${_ghtoken}" -H "Accept: application/octet-stream" \
+            -o "$_asset" "https://api.github.com/repos/${_ghrepo}/releases/assets/${_aid}" \
+            || { err "Gagal mengunduh asset (cek token/jaringan)."; rm -f "$_asset"; return 1; }
         else
-          err "curl/wget tidak tersedia untuk mengunduh."; return 1
+          # Publik: unduh langsung
+          local _url="https://github.com/${_ghrepo}/releases/download/${_tag}/${_asset}"
+          if command -v curl &>/dev/null; then
+            curl -fL --retry 3 -o "$_asset" "$_url" || { err "Gagal mengunduh dari ${_url}."; rm -f "$_asset"; return 1; }
+          elif command -v wget &>/dev/null; then
+            wget -O "$_asset" "$_url" || { err "Gagal mengunduh dari ${_url}."; rm -f "$_asset"; return 1; }
+          else
+            err "curl/wget tidak tersedia untuk mengunduh."; return 1
+          fi
         fi
         gzip -t "$_asset" 2>/dev/null || { err "File terunduh tidak valid (kemungkinan tag/varian salah)."; rm -f "$_asset"; return 1; }
         info "Mengekstrak image bundle dari installer..."
