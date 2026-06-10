@@ -153,9 +153,9 @@ _pick_install_method() {
         2) INSTALL_METHOD="tarball"; break ;;
         *) INSTALL_METHOD="registry-github"
            echo ""
-           echo -e "  ${DIM}Buat PAT di: GitHub → Settings → Developer settings → Personal access tokens (scope: read:packages)${NC}"
-           read -rp "  GitHub username: " REGISTRY_USER
-           read -rsp "  Personal Access Token (tidak tampil): " REGISTRY_TOKEN; echo
+           echo -e "  ${DIM}Image publik → kosongkan saja (pull anonim). Isi PAT (read:packages) hanya bila image privat.${NC}"
+           read -rp "  GitHub username (kosongkan jika publik): " REGISTRY_USER
+           read -rsp "  Personal Access Token (kosongkan jika publik): " REGISTRY_TOKEN; echo
            break ;;
       esac
     else
@@ -173,9 +173,9 @@ _pick_install_method() {
       2)
         INSTALL_METHOD="registry-github"
         echo ""
-        echo -e "  ${DIM}Buat PAT di: GitHub → Settings → Developer settings → Personal access tokens (scope: read:packages)${NC}"
-        read -rp "  GitHub username: " REGISTRY_USER
-        read -rsp "  Personal Access Token (tidak tampil): " REGISTRY_TOKEN; echo
+        echo -e "  ${DIM}Image publik → kosongkan saja (pull anonim). Isi PAT (read:packages) hanya bila image privat.${NC}"
+        read -rp "  GitHub username (kosongkan jika publik): " REGISTRY_USER
+        read -rsp "  Personal Access Token (kosongkan jika publik): " REGISTRY_TOKEN; echo
         break
         ;;
       3) INSTALL_METHOD="tarball"; break ;;
@@ -264,7 +264,9 @@ _ensure_infra_images() {
 _apply_install_method() {
   case "${INSTALL_METHOD:-local}" in
     registry-github)
-      local _reg_base="ghcr.io/harihk1/geomdb-hub"
+      # Namespace PUBLIK → instansi pull anonim tanpa token. Override via
+      # GEOMDB_APP_IMAGE/GEOMDB_*_IMAGE bila ingin pakai namespace privat.
+      local _reg_base="ghcr.io/harihk1/geomdb-hub-installer"
 
       # Kalau GEOPORTAL_NETWORK diset (server punya geoportal), pakai app-geoportal
       # yang sudah baked-in NEXT_PUBLIC_BASE_PATH=/geomdb-hub
@@ -281,14 +283,19 @@ _apply_install_method() {
 
       local _registry_host
       _registry_host="$(echo "${GEOMDB_APP_IMAGE}" | cut -d/ -f1)"
-      info "Login ke ${_registry_host}..."
-      echo "${REGISTRY_TOKEN}" | docker login "${_registry_host}" \
-        -u "${REGISTRY_USER}" --password-stdin \
-        || { err "Login registry gagal. Cek username dan token."; return 1; }
+      # Login HANYA bila token diisi (image privat). Image publik → pull anonim.
+      if [[ -n "${REGISTRY_TOKEN:-}" ]]; then
+        info "Login ke ${_registry_host}..."
+        echo "${REGISTRY_TOKEN}" | docker login "${_registry_host}" \
+          -u "${REGISTRY_USER}" --password-stdin \
+          || { err "Login registry gagal. Cek username dan token."; return 1; }
+      else
+        info "Tanpa token → pull anonim (image publik) dari ${_registry_host}..."
+      fi
       info "Pull image aplikasi dari ${_registry_host}..."
       docker compose pull app migrate ext-serv
       ok "Image berhasil di-pull dari registry."
-      docker logout "${_registry_host}" 2>/dev/null || true
+      [[ -n "${REGISTRY_TOKEN:-}" ]] && docker logout "${_registry_host}" 2>/dev/null || true
       ;;
     tarball)
       local tarfiles=()
