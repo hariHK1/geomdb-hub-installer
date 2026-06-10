@@ -246,6 +246,17 @@ _ensure_infra_images() {
   echo -e "  ${W}Opsi B — Pull langsung di server ini (butuh internet sementara):${NC}"
   echo "    docker compose pull postgres redis minio pycsw"
   echo ""
+  read -rp "  Pull image infra sekarang via internet? [Y/n]: " _pull_infra
+  if [[ ! "${_pull_infra,,}" =~ ^n ]]; then
+    info "Menarik image infra dari internet (bisa beberapa menit)..."
+    if docker compose pull postgres redis minio pycsw; then
+      ok "Image infra berhasil di-pull."
+      return 0
+    fi
+    err "Gagal pull image infra. Periksa koneksi internet, atau siapkan geomdb-infra-*.tar.gz (Opsi A)."
+    return 1
+  fi
+  warn "Dilewati. Siapkan geomdb-infra-*.tar.gz (Opsi A) lalu jalankan deploy lagi."
   return 1
 }
 
