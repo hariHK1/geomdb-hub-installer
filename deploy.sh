@@ -542,7 +542,12 @@ fn_deploy() {
     info "Database kosong — menjalankan seed data awal..."
     docker compose run --rm migrate npx tsx prisma/seed.ts && ok "Seed selesai."
   else
-    info "Database sudah berisi data ($user_count user) — seed dilewati."
+    info "Database sudah berisi data ($user_count user) — seed awal dilewati."
+    # Saat upgrade: perbarui HANYA dokumentasi (panduan + FAQ) agar konten terbaru
+    # ikut terpasang. Aman — tidak menyentuh user/pengaturan/standar/metadata.
+    info "Memperbarui dokumentasi (panduan + FAQ)..."
+    docker compose run --rm migrate npx tsx prisma/seed-docs-only.ts \
+      && ok "Dokumentasi diperbarui." || warn "Update dokumentasi dilewati."
   fi
 
   # 6. Start + tunggu ext-serv healthy
@@ -1545,7 +1550,12 @@ fn_deploy_local() {
     info "Database kosong — menjalankan seed data awal..."
     docker compose run --rm migrate npx tsx prisma/seed.ts && ok "Seed selesai."
   else
-    info "Database sudah berisi data ($user_count user) — seed dilewati."
+    info "Database sudah berisi data ($user_count user) — seed awal dilewati."
+    # Saat upgrade: perbarui HANYA dokumentasi (panduan + FAQ) agar konten terbaru
+    # ikut terpasang. Aman — tidak menyentuh user/pengaturan/standar/metadata.
+    info "Memperbarui dokumentasi (panduan + FAQ)..."
+    docker compose run --rm migrate npx tsx prisma/seed-docs-only.ts \
+      && ok "Dokumentasi diperbarui." || warn "Update dokumentasi dilewati."
   fi
 
   # 6. Start + tunggu ext-serv healthy
