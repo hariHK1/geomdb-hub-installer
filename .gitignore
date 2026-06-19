@@ -56,6 +56,10 @@ config/nginx/certs/*
 # claude memory (local only)
 /memory/
 
+# file installer lokal (tidak bagian dari source)
+/gen_env_from_excel.py
+/config-instalasi.xlsx
+
 # vercel
 .vercel
 
