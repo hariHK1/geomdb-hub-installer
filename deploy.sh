@@ -340,8 +340,17 @@ _apply_install_method() {
         [[ -z "$_tag" ]] && { err "Tag rilis kosong."; return 1; }
         # Varian: geoportal (sub-path /geomdb-hub) atau standalone (root)
         local _variant
-        read -rp "  Varian [geoportal] (geoportal=sub-path /geomdb-hub, standalone=root): " _variant
-        _variant="${_variant:-geoportal}"
+        echo -e "  ${W}Pilih varian instalasi:${NC}"
+        echo "  1) geoportal  — diakses di sub-path /geomdb-hub"
+        echo "  2) standalone — diakses di root / (server dedicated)"
+        while true; do
+          read -rp "  Pilih [1]: " _v
+          case "${_v:-1}" in
+            1) _variant="geoportal"; break ;;
+            2) _variant="standalone"; break ;;
+            *) echo -e "  ${R}✗${NC} Masukkan 1 atau 2." ;;
+          esac
+        done
         local _asset="geomdb-hub-${_tag}-${_variant}-installer.tar.gz"
         info "Mengunduh ${_asset} (bisa beberapa menit)..."
         if [[ -n "$_ghtoken" ]]; then
