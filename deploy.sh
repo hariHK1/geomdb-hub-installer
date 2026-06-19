@@ -1788,7 +1788,23 @@ fn_generate_env() {
     else
       if ! python3 -c "import openpyxl" 2>/dev/null; then
         warn "Modul openpyxl belum terinstal — mencoba instal otomatis..."
-        if pip3 install openpyxl -q 2>/dev/null || python3 -m pip install openpyxl -q 2>/dev/null; then
+        local _oxl_ok=false
+        # Coba pip3 / python3 -m pip, lalu dengan --break-system-packages (PEP 668),
+        # lalu package manager distro sebagai fallback terakhir.
+        pip3 install openpyxl -q 2>/dev/null && _oxl_ok=true
+        [[ "$_oxl_ok" == false ]] && python3 -m pip install openpyxl -q 2>/dev/null && _oxl_ok=true
+        [[ "$_oxl_ok" == false ]] && pip3 install openpyxl -q --break-system-packages 2>/dev/null && _oxl_ok=true
+        [[ "$_oxl_ok" == false ]] && python3 -m pip install openpyxl -q --break-system-packages 2>/dev/null && _oxl_ok=true
+        if [[ "$_oxl_ok" == false ]]; then
+          if command -v apt-get &>/dev/null; then
+            sudo apt-get install -y python3-openpyxl -qq 2>/dev/null && _oxl_ok=true
+          elif command -v dnf &>/dev/null; then
+            sudo dnf install -y python3-openpyxl -q 2>/dev/null && _oxl_ok=true
+          elif command -v yum &>/dev/null; then
+            sudo yum install -y python3-openpyxl -q 2>/dev/null && _oxl_ok=true
+          fi
+        fi
+        if [[ "$_oxl_ok" == true ]]; then
           ok "openpyxl berhasil diinstal."
         else
           warn "Gagal menginstal openpyxl. Lanjutkan wizard manual."
