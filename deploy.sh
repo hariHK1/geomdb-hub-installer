@@ -1785,11 +1785,16 @@ fn_generate_env() {
     echo -e "  ${G}✓${NC} File konfigurasi Excel ditemukan: ${W}${_excel_file}${NC}"
     if ! command -v python3 &>/dev/null; then
       warn "Python3 tidak tersedia — tidak bisa membaca Excel. Lanjutkan wizard manual."
-    elif ! python3 -c "import openpyxl" 2>/dev/null; then
-      warn "Modul openpyxl belum terinstal."
-      echo -e "     ${DIM}Instal dengan: ${W}pip3 install openpyxl${NC}"
-      warn "Lanjutkan wizard manual..."
     else
+      if ! python3 -c "import openpyxl" 2>/dev/null; then
+        warn "Modul openpyxl belum terinstal — mencoba instal otomatis..."
+        if pip3 install openpyxl -q 2>/dev/null || python3 -m pip install openpyxl -q 2>/dev/null; then
+          ok "openpyxl berhasil diinstal."
+        else
+          warn "Gagal menginstal openpyxl. Lanjutkan wizard manual."
+        fi
+      fi
+      if python3 -c "import openpyxl" 2>/dev/null; then
       echo -e "  ${DIM}Data isian akan dibaca dari Excel. Jawab pertanyaan pilihan berikut:${NC}"
       echo ""
 
@@ -2058,6 +2063,7 @@ GEOMDB_PY_EOF
         warn "Gagal membaca konfigurasi Excel."
         echo -e "  ${DIM}Periksa isian kolom NILAI di file Excel (field ★ Wajib harus terisi).${NC}"
         echo -e "  ${DIM}Lanjutkan dengan wizard manual, atau perbaiki Excel dan jalankan ulang menu 9.${NC}"
+      fi
       fi
     fi
     echo ""
@@ -2813,6 +2819,58 @@ main_menu() {
 # Pastikan dijalankan dari folder installer (ada docker-compose.yml)
 if [[ ! -f "docker-compose.yml" ]]; then
   echo "Error: jalankan deploy.sh dari folder installer (harus ada docker-compose.yml)."
+  exit 1
+fi
+
+# ─── Cek & instal Docker ──────────────────────────────────────────────────────
+if ! command -v docker &>/dev/null; then
+  echo ""
+  warn "Docker belum terinstal di sistem ini."
+  echo -e "  ${DIM}Docker diperlukan untuk menjalankan geomdb-hub.${NC}"
+  echo ""
+  read -rp "  Instal Docker sekarang secara otomatis? (Y/n): " _v
+  if [[ "${_v,,}" == "n" ]]; then
+    err "Docker diperlukan. Instal terlebih dahulu lalu jalankan ulang deploy.sh."
+    echo -e "  ${DIM}Panduan: https://docs.docker.com/engine/install/${NC}"
+    exit 1
+  fi
+  echo ""
+  info "Mengunduh dan menginstal Docker via script resmi (get.docker.com)..."
+  echo -e "  ${DIM}Diperlukan koneksi internet dan izin sudo.${NC}"
+  echo ""
+  if ! curl -fsSL https://get.docker.com | sudo sh; then
+    err "Gagal menginstal Docker."
+    echo -e "  ${DIM}Coba instal manual: https://docs.docker.com/engine/install/${NC}"
+    exit 1
+  fi
+  ok "Docker berhasil diinstal."
+  # Tambah user ke grup docker agar tidak perlu sudo tiap perintah
+  if ! id -nG "$USER" 2>/dev/null | grep -qw "docker"; then
+    sudo usermod -aG docker "$USER" 2>/dev/null || true
+    echo ""
+    warn "User '${USER}' ditambahkan ke grup docker."
+    warn "Jalankan  newgrp docker  atau logout/login ulang agar berlaku tanpa sudo."
+  fi
+  echo ""
+fi
+
+# Cek Docker daemon berjalan
+if ! docker info &>/dev/null; then
+  warn "Docker daemon tidak berjalan — mencoba start..."
+  sudo systemctl start docker 2>/dev/null || sudo service docker start 2>/dev/null || true
+  sleep 2
+  if ! docker info &>/dev/null; then
+    err "Docker daemon gagal distart. Jalankan: sudo systemctl start docker"
+    exit 1
+  fi
+  ok "Docker daemon berhasil distart."
+fi
+
+# Cek docker compose plugin
+if ! docker compose version &>/dev/null; then
+  err "Docker Compose plugin tidak ditemukan."
+  echo -e "  ${DIM}Instal plugin: sudo apt install docker-compose-plugin  (Debian/Ubuntu)${NC}"
+  echo -e "  ${DIM}Atau update Docker ke versi terbaru via get.docker.com${NC}"
   exit 1
 fi
 
