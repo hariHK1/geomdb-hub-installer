@@ -1774,6 +1774,295 @@ fn_generate_env() {
     [[ "${_ov,,}" == "y" ]] || { warn "Dibatalkan."; return; }
   fi
 
+  # ── Auto-generate dari Excel (jika file konfigurasi tersedia) ────────────
+  local _excel_file=""
+  for _ef in "config-instalasi.xlsx" "Config-Instalasi.xlsx" "KONFIGURASI.xlsx" "konfigurasi.xlsx"; do
+    [[ -f "$_ef" ]] && { _excel_file="$_ef"; break; }
+  done
+
+  if [[ -n "$_excel_file" ]]; then
+    echo ""
+    echo -e "  ${G}✓${NC} File konfigurasi Excel ditemukan: ${W}${_excel_file}${NC}"
+    if ! command -v python3 &>/dev/null; then
+      warn "Python3 tidak tersedia — tidak bisa membaca Excel. Lanjutkan wizard manual."
+    elif ! python3 -c "import openpyxl" 2>/dev/null; then
+      warn "Modul openpyxl belum terinstal."
+      echo -e "     ${DIM}Instal dengan: ${W}pip3 install openpyxl${NC}"
+      warn "Lanjutkan wizard manual..."
+    else
+      echo -e "  ${DIM}Data isian akan dibaca dari Excel. Jawab pertanyaan pilihan berikut:${NC}"
+      echo ""
+
+      # ── 1. Posisi aplikasi (menentukan BASE_PATH) ─────────────────────────
+      echo -e "  ${W}Apakah server ini sudah memiliki geoportal?${NC}"
+      echo -e "  ${DIM}(GeoNode, ArcGIS Portal, atau platform geoportal lainnya)${NC}"
+      echo ""
+      echo "  1) Ya, sudah punya geoportal"
+      echo -e "     ${DIM}→ Aplikasi diakses di sub-path: /geomdb-hub${NC}"
+      echo "  2) Tidak — server dedicated untuk aplikasi ini saja"
+      echo -e "     ${DIM}→ Aplikasi diakses di root /  (URL langsung)${NC}"
+      echo ""
+      read -rp "  Pilih [2]: " _v
+      local _xl_geoportal="${_v:-2}"
+
+      # ── 2. Nginx ──────────────────────────────────────────────────────────
+      echo ""
+      echo -e "  ${W}┌─ Nginx ──────────────────────────────────────────────────────┐${NC}"
+      echo -e "  ${DIM}• Pilih Y untuk produksi (HTTPS + domain publik).${NC}"
+      echo -e "  ${DIM}• Pilih N untuk dev lokal saja.${NC}"
+      local _xl_use_nginx="false" _xl_ext_nginx="false"
+      read -rp "  Mau menggunakan Nginx? (y/N): " _v
+      if [[ "${_v,,}" == "y" ]]; then
+        _xl_use_nginx="true"
+        echo -e "  ${DIM}Pilih N jika ingin Nginx dijalankan otomatis sebagai Docker container (rekomendasi).${NC}"
+        echo -e "  ${DIM}Pilih Y jika server sudah punya Nginx sendiri di luar Docker.${NC}"
+        read -rp "  Server sudah punya Nginx di luar Docker? (y/N): " _v
+        if [[ "${_v,,}" == "y" ]]; then
+          _xl_ext_nginx="true"
+          warn "Mode Nginx eksternal — Docker Nginx dan Certbot tidak akan dijalankan."
+          info "Arahkan Nginx Anda ke port app (Next.js) dan ext-serv sesuai yang dikonfigurasi di Excel."
+        else
+          info "Mode Nginx Docker — Nginx container akan dikelola oleh deploy.sh."
+        fi
+      else
+        warn "Nginx dilewati — app dapat diakses langsung via port Next.js."
+      fi
+
+      # ── 3. WhatsApp OTP ───────────────────────────────────────────────────
+      echo ""
+      echo -e "  ${W}┌─ WhatsApp OTP ───────────────────────────────────────────────┐${NC}"
+      echo -e "  ${Y}⚠  Jika DIAKTIFKAN: image lebih besar ~500MB (Chromium + whatsapp-web.js).${NC}"
+      echo -e "  ${DIM}Fitur ini bisa diaktifkan nanti dengan generate ulang .env dan rebuild.${NC}"
+      local _xl_wa="false"
+      read -rp "  Aktifkan fitur WhatsApp OTP? (y/N): " _v
+      [[ "${_v,,}" == "y" ]] && _xl_wa="true"
+
+      # ── Generate .env dari Excel + pilihan (script inline) ────────────────
+      echo ""
+      echo -e "  ${DIM}Membuat .env dari data Excel + pilihan di atas...${NC}"
+      echo ""
+      local _py_tmp
+      _py_tmp=$(mktemp /tmp/geomdb_excel_XXXXXX.py)
+      cat > "$_py_tmp" << 'GEOMDB_PY_EOF'
+#!/usr/bin/env python3
+import sys, os, re, secrets, base64
+from datetime import datetime
+try:
+    import openpyxl
+except ImportError:
+    print("ERROR: modul openpyxl tidak terinstal. Jalankan: pip3 install openpyxl", file=sys.stderr)
+    sys.exit(1)
+
+G="\033[32m"; W="\033[1m"; Y="\033[33m"; C="\033[36m"; NC="\033[0m"; DIM="\033[2m"; R="\033[31m"
+def err(m): print(f"\n  {R}✗{NC}  {m}", file=sys.stderr)
+def ok(m):  print(f"  {G}✓{NC}  {m}")
+def info(m):print(f"  {DIM}{m}{NC}")
+
+def load_excel(path):
+    try: wb = openpyxl.load_workbook(path, data_only=True)
+    except Exception as e: err(f"Tidak bisa membuka file Excel: {e}"); sys.exit(1)
+    ws = wb.active; cfg = {}
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row or not row[0]: continue
+        key = str(row[0]).strip()
+        if not key or key.startswith("#"): continue
+        raw = row[2] if len(row) > 2 else None
+        if raw is None or str(raw).strip() in ("", "None"): val = ""
+        elif isinstance(raw, (int, float)): val = str(int(raw))
+        else: val = str(raw).strip()
+        cfg[key] = val
+    return cfg
+
+_RE_EMAIL = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
+_RE_URL   = re.compile(r"^https?://[a-zA-Z0-9._\-]+(:[0-9]+)?(/.*)?$")
+_RE_ALPHA = re.compile(r"^[a-zA-Z0-9_]+$")
+
+def validate(cfg):
+    errs = []
+    if not cfg.get("APP_URL"): errs.append("APP_URL (URL Publik Aplikasi) belum diisi.")
+    elif not _RE_URL.match(cfg["APP_URL"]): errs.append(f"APP_URL tidak valid: '{cfg['APP_URL']}'")
+    if not cfg.get("SEED_ADMIN_EMAIL"): errs.append("SEED_ADMIN_EMAIL (Email Administrator) belum diisi.")
+    elif not _RE_EMAIL.match(cfg["SEED_ADMIN_EMAIL"]): errs.append(f"SEED_ADMIN_EMAIL tidak valid: '{cfg['SEED_ADMIN_EMAIL']}'")
+    if not cfg.get("SEED_ADMIN_PASSWORD"): errs.append("SEED_ADMIN_PASSWORD (Password Administrator) belum diisi.")
+    elif len(cfg["SEED_ADMIN_PASSWORD"]) < 8: errs.append("SEED_ADMIN_PASSWORD minimal 8 karakter.")
+    mu = cfg.get("MINIO_USER","").strip() or "geomdb_minio"
+    if not _RE_ALPHA.match(mu): errs.append(f"MINIO_USER tidak valid: '{mu}'")
+    return errs
+
+def yn(v, d=False):
+    if not v: return d
+    s = v.lower(); return s.startswith("y") or s in ("1","true")
+
+def port(v, d):
+    s = str(v).strip() if v else ""
+    return s if s.isdigit() and 1 <= int(s) <= 65535 else d
+
+def generate(cfg):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    app_url = cfg["APP_URL"].rstrip("/")
+    base_path = "/geomdb-hub" if cfg.get("_GEOPORTAL","2").strip()=="1" else ""
+    full_url  = app_url + base_path
+    use_nginx = yn(cfg.get("_USE_NGINX"), True)
+    ext_nginx = yn(cfg.get("_EXT_NGINX"), False)
+    un_s = "true" if use_nginx else "false"
+    en_s = "true" if ext_nginx else "false"
+    p_http=port(cfg.get("PORT_HTTP"),"80"); p_https=port(cfg.get("PORT_HTTPS"),"443")
+    p_app=port(cfg.get("PORT_APP"),"3000"); p_pg=port(cfg.get("PORT_PG"),"5432")
+    p_redis=port(cfg.get("PORT_REDIS"),"6379"); p_minio=port(cfg.get("PORT_MINIO_API"),"9000")
+    p_mcon=port(cfg.get("PORT_MINIO_CON"),"9001"); p_pycsw=port(cfg.get("PORT_PYCSW"),"8080")
+    p_ext=port(cfg.get("PORT_EXT"),"3007")
+    em=cfg["SEED_ADMIN_EMAIL"]; pw=cfg["SEED_ADMIN_PASSWORD"]
+    nm=cfg.get("SEED_ADMIN_NAME","").strip() or "Administrator Sistem"
+    org=cfg.get("SEED_ADMIN_ORG","").strip() or "Badan Informasi Geospasial"
+    jb=cfg.get("SEED_ADMIN_JABATAN","").strip() or "System Administrator"
+    tel=cfg.get("SEED_ADMIN_TELEPON","").strip()
+    gnet=cfg.get("GEOPORTAL_NETWORK","").strip()
+    mu=cfg.get("MINIO_USER","").strip() or "geomdb_minio"
+    wa=yn(cfg.get("_WA_ENABLED"),False); wa_s="true" if wa else "false"
+    def csw(k,d=""): return cfg.get(k,"").strip() or d
+    ct=csw("CSW_TITLE","Geomdb Hub CSW"); ca=csw("CSW_ABSTRACT","OGC Catalogue Service 2.0.2 - Katalog metadata geospasial")
+    ck=csw("CSW_KEYWORDS","metadata,geospasial,JIGN,INA-SDI"); cp=csw("CSW_PROVIDER_NAME","Badan Informasi Geospasial")
+    ccn=csw("CSW_CONTACT_NAME","Administrator"); ccp=csw("CSW_CONTACT_POSITION","System Administrator")
+    cca=csw("CSW_CONTACT_ADDRESS"); ccc=csw("CSW_CONTACT_CITY","Jakarta")
+    ccpv=csw("CSW_CONTACT_PROVINCE","DKI Jakarta"); ccpc=csw("CSW_CONTACT_POSTALCODE")
+    ccph=csw("CSW_CONTACT_PHONE"); cce=csw("CSW_CONTACT_EMAIL")
+    info("Membuat secrets...")
+    pg_p=secrets.token_hex(24); rd_p=secrets.token_hex(24); mn_p=secrets.token_hex(24)
+    jwt=secrets.token_hex(32); sec=secrets.token_hex(32); enc=secrets.token_hex(32)
+    ip_s=secrets.token_hex(16); hk=secrets.token_hex(24); sk=secrets.token_hex(32)
+    sa=""
+    if os.path.isfile(".env"):
+        for ln in open(".env","r",encoding="utf-8"):
+            m=re.match(r'^NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=["\']?(.+?)["\']?\s*$',ln)
+            if m: sa=m.group(1).strip(); break
+    if not sa: sa=base64.b64encode(secrets.token_bytes(24)).decode()
+    pl=[]
+    if use_nginx and not ext_nginx: pl+=[f"PORT_HTTP={p_http}",f"PORT_HTTPS={p_https}"]
+    pl+=[f"PORT_APP={p_app}",f"PORT_POSTGRES={p_pg}",f"PORT_REDIS={p_redis}",
+         f"PORT_MINIO_API={p_minio}",f"PORT_MINIO_CONSOLE={p_mcon}",
+         f"PORT_PYCSW={p_pycsw}",f"PORT_EXT_SERV={p_ext}"]
+    pb="\n".join(pl)
+    bpl=f"NEXT_PUBLIC_BASE_PATH={base_path}" if base_path else ""
+    tl=f"SEED_ADMIN_TELEPON={tel}" if tel else ""
+    main_env=f"""# Geomdb Hub — Environment Configuration
+# Di-generate oleh deploy.sh — {now}
+
+DATABASE_URL="postgresql://geomdb:{pg_p}@localhost:{p_pg}/geomdb_hub"
+JWT_SECRET="{jwt}"
+APP_SECRET="{sec}"
+ENCRYPTION_KEY="{enc}"
+NEXT_PUBLIC_APP_URL="{full_url}"
+APP_URL="{full_url}"
+NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="{sa}"
+{bpl}
+WA_ENABLED={wa_s}
+NEXT_PUBLIC_WA_ENABLED={wa_s}
+NODE_ENV="production"
+IP_SALT="{ip_s}"
+POSTGRES_PASSWORD="{pg_p}"
+MINIO_ROOT_USER="{mu}"
+MINIO_ROOT_PASSWORD="{mn_p}"
+REDIS_PASSWORD="{rd_p}"
+REDIS_URL="redis://:{rd_p}@localhost:{p_redis}"
+MINIO_URL="http://localhost:{p_minio}"
+MINIO_ENDPOINT="localhost"
+MINIO_PORT="{p_minio}"
+MINIO_BUCKET="geomdb-hub"
+PYCSW_URL="http://localhost:{p_pycsw}"
+NEXT_PUBLIC_PYCSW_URL="{full_url}/csw"
+CSW_TITLE="{ct}"
+CSW_ABSTRACT="{ca}"
+CSW_KEYWORDS="{ck}"
+CSW_FEES=None
+CSW_ACCESS_CONSTRAINTS=None
+CSW_PROVIDER_NAME="{cp}"
+CSW_CONTACT_NAME="{ccn}"
+CSW_CONTACT_POSITION="{ccp}"
+CSW_CONTACT_ADDRESS="{cca}"
+CSW_CONTACT_CITY="{ccc}"
+CSW_CONTACT_PROVINCE="{ccpv}"
+CSW_CONTACT_POSTALCODE="{ccpc}"
+CSW_CONTACT_PHONE="{ccph}"
+CSW_CONTACT_EMAIL="{cce}"
+DOCKER_INTERNAL_HOST=host.docker.internal
+GEOPORTAL_NETWORK={gnet}
+EXT_SERV_URL="http://localhost:{p_ext}"
+EXT_SERV_API_KEY="{sk}"
+HEALTH_API_KEY="{hk}"
+GEOMDB_SUBNET=172.28.0.0/24
+{pb}
+USE_NGINX={un_s}
+USE_EXTERNAL_NGINX={en_s}
+SEED_ADMIN_EMAIL="{em}"
+SEED_ADMIN_PASSWORD="{pw}"
+SEED_ADMIN_NAME="{nm}"
+SEED_ADMIN_ORG="{org}"
+SEED_ADMIN_JABATAN="{jb}"
+{tl}
+"""
+    ext_env=f"""# ext-serv — Environment Configuration
+# Di-generate oleh deploy.sh — {now}
+PORT=3007
+NODE_ENV=production
+ALLOWED_ORIGINS={app_url},http://localhost:{p_app}
+API_SECRET_KEY={sk}
+WA_ENABLED={wa_s}
+WA_SESSION_DIR=./.wwebjs_auth
+MAIL_TIMEOUT=10000
+"""
+    with open(".env","w",encoding="utf-8") as f: f.write(main_env)
+    ok("Berhasil menulis .env")
+    os.makedirs("ext_serv-main",exist_ok=True)
+    with open("ext_serv-main/.env","w",encoding="utf-8") as f: f.write(ext_env)
+    ok("Berhasil menulis ext_serv-main/.env")
+    print()
+    print(f"{Y}  ┌──────────────────────────────────────────────────────────────────┐")
+    print(f"  │          SIMPAN CREDENTIAL BERIKUT DI TEMPAT AMAN !              │")
+    print(f"  ├──────────────────────────────────────────────────────────────────┤")
+    print(f"  │  {'Admin email:':<36} {em:<27} │")
+    print(f"  │  {'Admin password:':<36} {pw:<27} │")
+    print(f"  │  {'PostgreSQL password:':<36} {pg_p[:27]:<27} │")
+    print(f"  │  {'MinIO password:':<36} {mn_p[:27]:<27} │")
+    print(f"  │  {'Shared API Key:':<36} {sk[:24]+'...':<27} │")
+    print(f"  └──────────────────────────────────────────────────────────────────┘{NC}")
+    print(); print(f"  {W}URL Aplikasi:{NC} {C}{full_url}{NC}"); print()
+
+if len(sys.argv)<2: err("Usage: script.py <xlsx> [geoportal] [nginx] [ext_nginx] [wa]"); sys.exit(1)
+xlsx=sys.argv[1]
+if not os.path.isfile(xlsx): err(f"File tidak ditemukan: {xlsx}"); sys.exit(1)
+geo=sys.argv[2] if len(sys.argv)>2 else "2"
+un =sys.argv[3] if len(sys.argv)>3 else "true"
+en =sys.argv[4] if len(sys.argv)>4 else "false"
+wa =sys.argv[5] if len(sys.argv)>5 else "false"
+print(); info(f"Membaca konfigurasi dari: {xlsx}")
+cfg=load_excel(xlsx)
+cfg["_GEOPORTAL"]=geo; cfg["_USE_NGINX"]=un; cfg["_EXT_NGINX"]=en; cfg["_WA_ENABLED"]=wa
+errs=validate(cfg)
+if errs:
+    print(); print(f"  {R}✗  Konfigurasi Excel belum lengkap:{NC}")
+    for e in errs: print(f"     {Y}•{NC} {e}")
+    print(); print(f"  {DIM}Buka file Excel, lengkapi kolom NILAI yang bertanda ★ Wajib, lalu simpan dan coba lagi.{NC}")
+    sys.exit(1)
+generate(cfg)
+GEOMDB_PY_EOF
+      if python3 "$_py_tmp" "$_excel_file" "$_xl_geoportal" "$_xl_use_nginx" "$_xl_ext_nginx" "$_xl_wa"; then
+        rm -f "$_py_tmp"
+        ok "File .env berhasil di-generate!"
+        echo ""
+        echo -e "  ${DIM}Langkah selanjutnya:${NC}"
+        echo -e "  ${DIM}  • Deploy server → menu 4 (lalu atur SSL di menu 8)${NC}"
+        return
+      else
+        rm -f "$_py_tmp"
+        echo ""
+        warn "Gagal membaca konfigurasi Excel."
+        echo -e "  ${DIM}Periksa isian kolom NILAI di file Excel (field ★ Wajib harus terisi).${NC}"
+        echo -e "  ${DIM}Lanjutkan dengan wizard manual, atau perbaiki Excel dan jalankan ulang menu 9.${NC}"
+      fi
+    fi
+    echo ""
+  fi
+
   echo ""
   echo -e "  ${C}Tekan Enter untuk memakai nilai default [ dalam kurung ].${NC}"
 
