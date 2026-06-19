@@ -1867,6 +1867,48 @@ fn_generate_env() {
       read -rp "  Aktifkan fitur WhatsApp OTP? (y/N): " _v
       [[ "${_v,,}" == "y" ]] && _xl_wa="true"
 
+      # ── 4. Docker Network Geoportal (hanya jika geoportal) ────────────────
+      local _xl_gnet=""
+      if [[ "$_xl_geoportal" == "1" ]]; then
+        echo ""
+        echo -e "  ${W}┌─ Docker Network Geoportal ───────────────────────────────────┐${NC}"
+        echo -e "  ${DIM}Nama network Docker tempat geoportal (GeoNode/ArcGIS) berjalan.${NC}"
+        echo -e "  ${DIM}Diperlukan agar nginx geoportal bisa proxy ke geomdb_app.${NC}"
+        local _all_nets=()
+        if command -v docker &>/dev/null; then
+          mapfile -t _all_nets < <(docker network ls --format "{{.Name}} {{.Driver}}" 2>/dev/null || true)
+        fi
+        if [[ ${#_all_nets[@]} -gt 0 ]]; then
+          echo -e "  ${DIM}Network Docker yang tersedia:${NC}"
+          local _ni
+          for _ni in "${!_all_nets[@]}"; do
+            printf "  %2d) %s\n" "$(( _ni + 1 ))" "${_all_nets[$_ni]}"
+          done
+          echo ""
+          while true; do
+            read -rp "  Nomor network geoportal: " _v
+            if [[ -z "$_v" ]]; then
+              echo -e "  ${R}✗${NC} Harus dipilih untuk mode geoportal."
+              continue
+            fi
+            if ! [[ "$_v" =~ ^[0-9]+$ ]] || (( _v < 1 || _v > ${#_all_nets[@]} )); then
+              echo -e "  ${R}✗${NC} Masukkan angka 1–${#_all_nets[@]}."
+              continue
+            fi
+            _xl_gnet="${_all_nets[$(( _v - 1 ))]%% *}"
+            echo -e "  ${G}✓${NC} Network dipilih: ${W}${_xl_gnet}${NC}"
+            break
+          done
+        else
+          echo -e "  ${DIM}Tidak ada network Docker terdeteksi. Ketik nama network secara manual.${NC}"
+          while true; do
+            read -rp "  Nama network geoportal: " _xl_gnet
+            [[ -n "$_xl_gnet" ]] && break
+            echo -e "  ${R}✗${NC} Nama network tidak boleh kosong untuk mode geoportal."
+          done
+        fi
+      fi
+
       # ── Generate .env dari Excel + pilihan (script inline) ────────────────
       echo ""
       echo -e "  ${DIM}Membuat .env dari data Excel + pilihan di atas...${NC}"
@@ -2057,16 +2099,19 @@ MAIL_TIMEOUT=10000
     print(f"  └──────────────────────────────────────────────────────────────────┘{NC}")
     print(); print(f"  {W}URL Aplikasi:{NC} {C}{full_url}{NC}"); print()
 
-if len(sys.argv)<2: err("Usage: script.py <xlsx> [geoportal] [nginx] [ext_nginx] [wa]"); sys.exit(1)
+if len(sys.argv)<2: err("Usage: script.py <xlsx> [geoportal] [nginx] [ext_nginx] [wa] [gnet]"); sys.exit(1)
 xlsx=sys.argv[1]
 if not os.path.isfile(xlsx): err(f"File tidak ditemukan: {xlsx}"); sys.exit(1)
 geo=sys.argv[2] if len(sys.argv)>2 else "2"
 un =sys.argv[3] if len(sys.argv)>3 else "true"
 en =sys.argv[4] if len(sys.argv)>4 else "false"
 wa =sys.argv[5] if len(sys.argv)>5 else "false"
+gnet_arg=sys.argv[6] if len(sys.argv)>6 else None
 print(); info(f"Membaca konfigurasi dari: {xlsx}")
 cfg=load_excel(xlsx)
 cfg["_GEOPORTAL"]=geo; cfg["_USE_NGINX"]=un; cfg["_EXT_NGINX"]=en; cfg["_WA_ENABLED"]=wa
+# GEOPORTAL_NETWORK diambil dari terminal (argv[6]), bukan Excel — agar bisa deteksi network live
+if gnet_arg is not None: cfg["GEOPORTAL_NETWORK"]=gnet_arg
 errs=validate(cfg)
 if errs:
     print(); print(f"  {R}✗  Konfigurasi Excel belum lengkap:{NC}")
@@ -2075,7 +2120,7 @@ if errs:
     sys.exit(1)
 generate(cfg)
 GEOMDB_PY_EOF
-      if python3 "$_py_tmp" "$_excel_file" "$_xl_geoportal" "$_xl_use_nginx" "$_xl_ext_nginx" "$_xl_wa"; then
+      if python3 "$_py_tmp" "$_excel_file" "$_xl_geoportal" "$_xl_use_nginx" "$_xl_ext_nginx" "$_xl_wa" "$_xl_gnet"; then
         rm -f "$_py_tmp"
         ok "File .env berhasil di-generate!"
         echo ""
