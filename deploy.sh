@@ -2020,6 +2020,21 @@ def generate(cfg):
 #  Geomdb Hub — Environment Configuration
 #  Di-generate oleh deploy.sh — {now}
 # ════════════════════════════════════════════════════════════
+#
+#  Cara mengubah konfigurasi:
+#  1. Edit file ini langsung:  nano .env  (atau vim / editor lain)
+#  2. Restart container sesuai jenis perubahan:
+#
+#     Perubahan runtime (URL, secret, CSW, port, ext-serv):
+#       docker compose up -d --force-recreate
+#
+#     Perubahan build-time (NEXT_PUBLIC_*, WA_ENABLED, BASE_PATH):
+#       docker compose up -d --build app
+#
+#  ⚠  JANGAN ubah setelah data ada — akan merusak data yang tersimpan:
+#     POSTGRES_PASSWORD · MINIO_ROOT_PASSWORD · REDIS_PASSWORD
+#     ENCRYPTION_KEY · NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
+# ════════════════════════════════════════════════════════════
 
 # ─── Database ────────────────────────────────────────────────
 # Untuk local dev (Next.js langsung, tanpa Docker):
@@ -2708,6 +2723,21 @@ GEOMDB_PY_EOF
 # ════════════════════════════════════════════════════════════
 #  Geomdb Hub — Environment Configuration
 #  Di-generate oleh deploy.sh — $(date '+%Y-%m-%d %H:%M:%S')
+# ════════════════════════════════════════════════════════════
+#
+#  Cara mengubah konfigurasi:
+#  1. Edit file ini langsung:  nano .env  (atau vim / editor lain)
+#  2. Restart container sesuai jenis perubahan:
+#
+#     Perubahan runtime (URL, secret, CSW, port, ext-serv):
+#       docker compose up -d --force-recreate
+#
+#     Perubahan build-time (NEXT_PUBLIC_*, WA_ENABLED, BASE_PATH):
+#       docker compose up -d --build app
+#
+#  ⚠  JANGAN ubah setelah data ada — akan merusak data yang tersimpan:
+#     POSTGRES_PASSWORD · MINIO_ROOT_PASSWORD · REDIS_PASSWORD
+#     ENCRYPTION_KEY · NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
 # ════════════════════════════════════════════════════════════
 
 # ─── Database ────────────────────────────────────────────────
