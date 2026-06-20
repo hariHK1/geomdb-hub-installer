@@ -32,13 +32,14 @@ contact_address=${CSW_CONTACT_ADDRESS}
 contact_city=${CSW_CONTACT_CITY}
 contact_stateorprovince=${CSW_CONTACT_PROVINCE}
 contact_postalcode=${CSW_CONTACT_POSTALCODE}
-contact_country=Indonesia
+contact_country=${CSW_CONTACT_COUNTRY}
 contact_phone=${CSW_CONTACT_PHONE}
-contact_fax=
+contact_fax=${CSW_CONTACT_FAX}
 contact_email=${CSW_CONTACT_EMAIL}
-contact_url=${APP_URL}
-contact_hours=09:00 - 17:00 WIB
-contact_role=pointOfContact
+contact_url=${CSW_CONTACT_URL}
+contact_hours=${CSW_CONTACT_HOURS}
+contact_instructions=${CSW_CONTACT_INSTRUCTIONS}
+contact_role=${CSW_CONTACT_ROLE}
 
 [manager]
 transactions=true

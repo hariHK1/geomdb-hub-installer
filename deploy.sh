@@ -2036,7 +2036,10 @@ def generate(cfg):
     ccn=csw("CSW_CONTACT_NAME","Administrator"); ccp=csw("CSW_CONTACT_POSITION","System Administrator")
     cca=csw("CSW_CONTACT_ADDRESS"); ccc=csw("CSW_CONTACT_CITY","Jakarta")
     ccpv=csw("CSW_CONTACT_PROVINCE","DKI Jakarta"); ccpc=csw("CSW_CONTACT_POSTALCODE")
-    ccph=csw("CSW_CONTACT_PHONE"); cce=csw("CSW_CONTACT_EMAIL")
+    ccph=csw("CSW_CONTACT_PHONE"); ccf=csw("CSW_CONTACT_FAX"); cce=csw("CSW_CONTACT_EMAIL")
+    ccco=csw("CSW_CONTACT_COUNTRY","Indonesia"); ccu=csw("CSW_CONTACT_URL")
+    cch=csw("CSW_CONTACT_HOURS","08:00-16:00"); cci=csw("CSW_CONTACT_INSTRUCTIONS","Senin-Jumat")
+    ccr=csw("CSW_CONTACT_ROLE","Walidata")
     info("Membuat secrets...")
     pg_p=secrets.token_hex(24); rd_p=secrets.token_hex(24); mn_p=secrets.token_hex(24)
     jwt=secrets.token_hex(32); sec=secrets.token_hex(32); enc=secrets.token_hex(32)
@@ -2148,7 +2151,13 @@ CSW_CONTACT_CITY="{ccc}"
 CSW_CONTACT_PROVINCE="{ccpv}"
 CSW_CONTACT_POSTALCODE="{ccpc}"
 CSW_CONTACT_PHONE="{ccph}"
+CSW_CONTACT_FAX="{ccf}"
 CSW_CONTACT_EMAIL="{cce}"
+CSW_CONTACT_COUNTRY="{ccco}"
+CSW_CONTACT_URL="{ccu}"
+CSW_CONTACT_HOURS="{cch}"
+CSW_CONTACT_INSTRUCTIONS="{cci}"
+CSW_CONTACT_ROLE="{ccr}"
 
 # ─── OAuth2 Docker networking ────────────────────────────────
 # Agar server-side token exchange ke provider OAuth2 yang berjalan di host
@@ -2687,6 +2696,18 @@ GEOMDB_PY_EOF
     fi
     break
   done
+  read -rp "  Faksimili (opsional)                        [  ]: " _v
+  local CSW_CONTACT_FAX="${_v:-}"
+  read -rp "  Negara                     [Indonesia]: " _v
+  local CSW_CONTACT_COUNTRY="${_v:-Indonesia}"
+  read -rp "  Website instansi (opsional)                 [  ]: " _v
+  local CSW_CONTACT_URL="${_v:-}"
+  read -rp "  Jam operasional            [08:00-16:00]: " _v
+  local CSW_CONTACT_HOURS="${_v:-08:00-16:00}"
+  read -rp "  Instruksi kontak           [Senin-Jumat]: " _v
+  local CSW_CONTACT_INSTRUCTIONS="${_v:-Senin-Jumat}"
+  read -rp "  Peran kontak               [Walidata]: " _v
+  local CSW_CONTACT_ROLE="${_v:-Walidata}"
 
   # ── Preview & konfirmasi ──────────────────────────────────────────────────
   local _nginx_mode="Tidak digunakan (akses langsung via port)"
@@ -2856,7 +2877,13 @@ CSW_CONTACT_CITY="${CSW_CONTACT_CITY}"
 CSW_CONTACT_PROVINCE="${CSW_CONTACT_PROVINCE}"
 CSW_CONTACT_POSTALCODE="${CSW_CONTACT_POSTALCODE}"
 CSW_CONTACT_PHONE="${CSW_CONTACT_PHONE}"
+CSW_CONTACT_FAX="${CSW_CONTACT_FAX}"
 CSW_CONTACT_EMAIL="${CSW_CONTACT_EMAIL}"
+CSW_CONTACT_COUNTRY="${CSW_CONTACT_COUNTRY}"
+CSW_CONTACT_URL="${CSW_CONTACT_URL}"
+CSW_CONTACT_HOURS="${CSW_CONTACT_HOURS}"
+CSW_CONTACT_INSTRUCTIONS="${CSW_CONTACT_INSTRUCTIONS}"
+CSW_CONTACT_ROLE="${CSW_CONTACT_ROLE}"
 
 # ─── OAuth2 Docker networking ────────────────────────────────
 # Agar server-side token exchange ke provider OAuth2 yang berjalan di host
