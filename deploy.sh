@@ -2166,10 +2166,12 @@ WA_SESSION_DIR=./.wwebjs_auth
 MAIL_TIMEOUT=10000
 """
     with open(".env","w",encoding="utf-8") as f: f.write(main_env)
-    ok("Berhasil menulis .env")
+    os.chmod(".env", 0o600)
+    ok("Berhasil menulis .env (chmod 600)")
     os.makedirs("ext_serv-main",exist_ok=True)
     with open("ext_serv-main/.env","w",encoding="utf-8") as f: f.write(ext_env)
-    ok("Berhasil menulis ext_serv-main/.env")
+    os.chmod("ext_serv-main/.env", 0o600)
+    ok("Berhasil menulis ext_serv-main/.env (chmod 600)")
     print()
     print(f"{Y}  ┌──────────────────────────────────────────────────────────────────┐")
     print(f"  │          SIMPAN CREDENTIAL BERIKUT DI TEMPAT AMAN !              │")
@@ -2853,7 +2855,8 @@ SEED_ADMIN_JABATAN="${SEED_ADMIN_JABATAN}"
 $(  [[ -n "${SEED_ADMIN_TELEPON}" ]] && echo "SEED_ADMIN_TELEPON=${SEED_ADMIN_TELEPON}" )
 MAINENV
 
-  ok "Berhasil menulis .env"
+  chmod 600 .env
+  ok "Berhasil menulis .env (chmod 600)"
 
   # ── Tulis ext_serv-main/.env ──────────────────────────────────────────────
   # Di installer mode folder ext_serv-main/ tidak ada (tanpa source), tapi file
@@ -2919,7 +2922,8 @@ MAIL_TIMEOUT=10000
 # RESEND_FROM=No Reply <onboarding@resend.dev>
 EXTENV
 
-  ok "Berhasil menulis ext_serv-main/.env"
+  chmod 600 ext_serv-main/.env
+  ok "Berhasil menulis ext_serv-main/.env (chmod 600)"
 
   # ── Summary credential ────────────────────────────────────────────────────
   echo ""
