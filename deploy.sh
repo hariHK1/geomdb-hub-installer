@@ -1959,6 +1959,34 @@ def validate(cfg):
     elif len(cfg["SEED_ADMIN_PASSWORD"]) < 8: errs.append("SEED_ADMIN_PASSWORD minimal 8 karakter.")
     mu = cfg.get("MINIO_USER","").strip() or "geomdb_minio"
     if not _RE_ALPHA.match(mu): errs.append(f"MINIO_USER tidak valid: '{mu}'")
+    import socket
+    _PL = [("PORT_HTTP","HTTP Nginx","80"),("PORT_HTTPS","HTTPS Nginx","443"),
+           ("PORT_APP","Aplikasi","3000"),("PORT_PG","PostgreSQL","5432"),
+           ("PORT_REDIS","Redis","6379"),("PORT_MINIO_API","MinIO API","9000"),
+           ("PORT_MINIO_CON","MinIO Console","9001"),("PORT_PYCSW","pycsw","8080"),
+           ("PORT_EXT","ext-serv","3007")]
+    use_ng = yn(cfg.get("_USE_NGINX"),True); ext_ng = yn(cfg.get("_EXT_NGINX"),False)
+    skip_ng = (not use_ng) or ext_ng
+    seen = {}
+    for k,lbl,dfl in _PL:
+        if k in ("PORT_HTTP","PORT_HTTPS") and skip_ng: continue
+        raw = cfg.get(k,"").strip() or dfl
+        if not (raw.isdigit() and 1 <= int(raw) <= 65535):
+            errs.append(f"{k} ({lbl}) tidak valid: '{raw}' - harus angka 1-65535."); continue
+        if raw in seen: errs.append(f"Konflik port: {k} ({lbl}) dan {seen[raw]} sama-sama menggunakan port {raw}.")
+        else: seen[raw] = f"{k} ({lbl})"
+    warns = []
+    for ps,lbl in seen.items():
+        try:
+            s = socket.socket(socket.AF_INET,socket.SOCK_STREAM); s.settimeout(0.3)
+            if s.connect_ex(("127.0.0.1",int(ps)))==0: warns.append(f"  {Y}!{NC}  Port {W}{ps}{NC} ({lbl.split('(')[0].strip()}) sudah dipakai proses lain.")
+            s.close()
+        except Exception: pass
+    if warns:
+        print(); print(f"  {Y}Peringatan port yang sudah aktif:{NC}")
+        for w in warns: sys.stdout.write(w+"\n")
+        sys.stdout.write(f"  {DIM}Jika memang ingin menggunakan port tersebut, abaikan peringatan ini.{NC}\n")
+        sys.stdout.flush()
     return errs
 
 def yn(v, d=False):
