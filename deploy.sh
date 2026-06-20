@@ -1945,9 +1945,10 @@ def load_excel(path):
         cfg[key] = val
     return cfg
 
-_RE_EMAIL = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
-_RE_URL   = re.compile(r"^https?://[a-zA-Z0-9._\-]+(:[0-9]+)?(/.*)?$")
-_RE_ALPHA = re.compile(r"^[a-zA-Z0-9_]+$")
+_RE_EMAIL  = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
+_RE_URL    = re.compile(r"^https?://[a-zA-Z0-9._\-]+(:[0-9]+)?(/.*)?$")
+_RE_ALPHA  = re.compile(r"^[a-zA-Z0-9_]+$")
+_RE_SUBNET = re.compile(r"^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$")
 
 def validate(cfg):
     errs = []
@@ -1959,6 +1960,15 @@ def validate(cfg):
     elif len(cfg["SEED_ADMIN_PASSWORD"]) < 8: errs.append("SEED_ADMIN_PASSWORD minimal 8 karakter.")
     mu = cfg.get("MINIO_USER","").strip() or "geomdb_minio"
     if not _RE_ALPHA.match(mu): errs.append(f"MINIO_USER tidak valid: '{mu}'")
+    sn = cfg.get("GEOMDB_SUBNET","").strip() or "172.28.0.0/24"
+    if not _RE_SUBNET.match(sn): errs.append(f"GEOMDB_SUBNET tidak valid: '{sn}' - format x.x.x.x/prefix, mis. 172.28.0.0/24.")
+    else:
+        pfx = int(sn.split("/")[1])
+        if pfx < 8 or pfx > 30: errs.append(f"GEOMDB_SUBNET prefix /{pfx} tidak wajar - gunakan /16 hingga /28.")
+        elif sn.split("/")[0] in ["172.17.0.0","172.18.0.0","172.19.0.0"]:
+            sys.stdout.write(f"\n  {Y}!{NC}  GEOMDB_SUBNET {W}{sn}{NC} adalah subnet default Docker (bridge/host network).\n")
+            sys.stdout.write(f"  {DIM}Mungkin sudah dipakai dan bisa konflik. Rekomendasi: 172.20-31.x.x/24.{NC}\n")
+            sys.stdout.flush()
     import socket
     _PL = [("PORT_HTTP","HTTP Nginx","80"),("PORT_HTTPS","HTTPS Nginx","443"),
            ("PORT_APP","Aplikasi","3000"),("PORT_PG","PostgreSQL","5432"),
@@ -2018,6 +2028,7 @@ def generate(cfg):
     tel=cfg.get("SEED_ADMIN_TELEPON","").strip()
     gnet=cfg.get("GEOPORTAL_NETWORK","").strip()
     mu=cfg.get("MINIO_USER","").strip() or "geomdb_minio"
+    sn=cfg.get("GEOMDB_SUBNET","").strip() or "172.28.0.0/24"
     wa=yn(cfg.get("_WA_ENABLED"),False); wa_s="true" if wa else "false"
     def csw(k,d=""): return cfg.get(k,"").strip() or d
     ct=csw("CSW_TITLE","Geomdb Hub CSW"); ca=csw("CSW_ABSTRACT","OGC Catalogue Service 2.0.2 - Katalog metadata geospasial")
@@ -2170,9 +2181,11 @@ HEALTH_API_KEY="{hk}"
 # GEONODE_CSW_PASSWORD=your_password
 
 # ─── Network ─────────────────────────────────────────────────
-# Subnet khusus agar tidak tabrakan dengan geoportal atau stack lain.
-# Ganti jika subnet ini sudah dipakai jaringan lain di server.
-GEOMDB_SUBNET=172.28.0.0/24
+# Subnet internal Docker untuk container geomdb. Pastikan tidak bentrok
+# dengan jaringan lain di server (docker network ls / ip route).
+# Subnet default Docker yang sering sudah terpakai: 172.17/18/19.0.0/16
+# Cek subnet aktif: docker network inspect $(docker network ls -q) | grep Subnet
+GEOMDB_SUBNET={sn}
 
 # ─── Port overrides (docker-compose) ─────────────────────────
 {pb}
