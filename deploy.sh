@@ -2016,32 +2016,71 @@ def generate(cfg):
     pb="\n".join(pl)
     bpl=f"NEXT_PUBLIC_BASE_PATH={base_path}" if base_path else ""
     tl=f"SEED_ADMIN_TELEPON={tel}" if tel else ""
-    main_env=f"""# Geomdb Hub — Environment Configuration
-# Di-generate oleh deploy.sh — {now}
+    main_env=f"""# ════════════════════════════════════════════════════════════
+#  Geomdb Hub — Environment Configuration
+#  Di-generate oleh deploy.sh — {now}
+# ════════════════════════════════════════════════════════════
 
+# ─── Database ────────────────────────────────────────────────
+# Untuk local dev (Next.js langsung, tanpa Docker):
 DATABASE_URL="postgresql://geomdb:{pg_p}@localhost:{p_pg}/geomdb_hub"
+# Di Docker, di-override otomatis oleh docker-compose.yml
+
+# ─── Auth ────────────────────────────────────────────────────
 JWT_SECRET="{jwt}"
 APP_SECRET="{sec}"
+# Kunci terpisah untuk enkripsi field sensitif (email, telepon) di DB.
+# Pisah dari JWT_SECRET agar rotasi salah satu tidak merusak yang lain.
 ENCRYPTION_KEY="{enc}"
+# COOKIE_SECURE=false  # uncomment jika local dev via HTTP
+
+# ─── Aplikasi ────────────────────────────────────────────────
 NEXT_PUBLIC_APP_URL="{full_url}"
+# APP_URL = URL absolut RUNTIME untuk link sisi-server (email/redirect/CSW/XML).
 APP_URL="{full_url}"
+# Kunci enkripsi Server Actions Next.js — HARUS STABIL antar-build.
 NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="{sa}"
 {bpl}
 WA_ENABLED={wa_s}
 NEXT_PUBLIC_WA_ENABLED={wa_s}
 NODE_ENV="production"
+# Salt untuk hashing IP pada log view katalog (UU PDP compliance).
 IP_SALT="{ip_s}"
+
+# ─── Registry GHCR (opsional) ────────────────────────────────
+# Isi jika ingin pakai image dari registry daripada build lokal.
+# Kosongkan (hapus atau komen) untuk tetap build lokal.
+# GEOMDB_APP_IMAGE=ghcr.io/harihk1/geomdb-hub/app-geoportal
+# GEOMDB_MIGRATE_IMAGE=ghcr.io/harihk1/geomdb-hub/migrate
+# GEOMDB_EXT_SERV_IMAGE=ghcr.io/harihk1/geomdb-hub/ext-serv
+# GEOMDB_IMAGE_TAG=latest
+
+# ─── Docker services ─────────────────────────────────────────
 POSTGRES_PASSWORD="{pg_p}"
 MINIO_ROOT_USER="{mu}"
 MINIO_ROOT_PASSWORD="{mn_p}"
+
+# ─── Redis ───────────────────────────────────────────────────
 REDIS_PASSWORD="{rd_p}"
 REDIS_URL="redis://:{rd_p}@localhost:{p_redis}"
+# Di Docker: di-override ke redis://:password@redis:6379
+
+# ─── MinIO ───────────────────────────────────────────────────
 MINIO_URL="http://localhost:{p_minio}"
 MINIO_ENDPOINT="localhost"
 MINIO_PORT="{p_minio}"
 MINIO_BUCKET="geomdb-hub"
+# Di Docker: di-override ke http://minio:9000
+
+# ─── pycsw ───────────────────────────────────────────────────
 PYCSW_URL="http://localhost:{p_pycsw}"
 NEXT_PUBLIC_PYCSW_URL="{full_url}/csw"
+# Di Docker: di-override ke http://pycsw:8000
+# Untuk production, NEXT_PUBLIC_PYCSW_URL harus URL yang bisa diakses browser.
+
+# ─── CSW Identitas Layanan ────────────────────────────────────
+# Dipakai oleh pycsw (via docker-compose env) saat container start.
+# Bisa juga dikonfigurasi via menu admin → Pengaturan CSW.
 CSW_TITLE="{ct}"
 CSW_ABSTRACT="{ca}"
 CSW_KEYWORDS="{ck}"
@@ -2056,15 +2095,59 @@ CSW_CONTACT_PROVINCE="{ccpv}"
 CSW_CONTACT_POSTALCODE="{ccpc}"
 CSW_CONTACT_PHONE="{ccph}"
 CSW_CONTACT_EMAIL="{cce}"
+
+# ─── OAuth2 Docker networking ────────────────────────────────
+# Agar server-side token exchange ke provider OAuth2 yang berjalan di host
+# (mis. localhost) bisa diakses dari dalam container Docker.
 DOCKER_INTERNAL_HOST=host.docker.internal
+
+# ─── Geoportal integration (opsional) ────────────────────────
+# Nama Docker network geoportal (GeoNode, ArcGIS Portal, dll.) agar
+# nginx geoportal bisa proxy ke geomdb_app.
+# Kosongkan jika geomdb tidak dijalankan bersama geoportal.
 GEOPORTAL_NETWORK={gnet}
+
+# ─── ext-serv (Email + WhatsApp API) ─────────────────────────
 EXT_SERV_URL="http://localhost:{p_ext}"
 EXT_SERV_API_KEY="{sk}"
+# Di Docker: EXT_SERV_URL di-override ke http://ext-serv:3007
+
+# ─── Health check (monitoring) ───────────────────────────────
+# Dipakai oleh tools monitoring (Uptime Kuma, Prometheus, dll.)
+# sebagai Bearer token ke GET /api/health
 HEALTH_API_KEY="{hk}"
+
+# ─── GeoNode integration (opsional) ──────────────────────────
+# Isi jika ingin sinkron metadata ke GeoNode. Bisa juga dikonfigurasi
+# via menu admin → Pengaturan → GeoNode.
+# GEONODE_URL=https://geonode.example.com
+# GEONODE_CLIENT_ID=your_client_id
+# GEONODE_CLIENT_SECRET=your_client_secret
+# GEONODE_CSW_USER=admin
+# GEONODE_CSW_PASSWORD=your_password
+
+# ─── Network ─────────────────────────────────────────────────
+# Subnet khusus agar tidak tabrakan dengan geoportal atau stack lain.
+# Ganti jika subnet ini sudah dipakai jaringan lain di server.
 GEOMDB_SUBNET=172.28.0.0/24
+
+# ─── Port overrides (docker-compose) ─────────────────────────
 {pb}
+
+# ─── WARP (Cloudflare WireGuard) ─────────────────────────────
+# WARP diaktifkan otomatis jika koneksi ke host:port di bawah gagal (diblokir ISP).
+# Ubah jika provider SMTP Anda bukan Gmail.
+# WARP_CHECK_HOST=smtp.gmail.com
+# WARP_CHECK_PORT=465
+
+# ─── Nginx ───────────────────────────────────────────────────
+# true  = Nginx dikelola di luar Docker (tidak perlu certbot/nginx container)
+# false = Nginx dijalankan sebagai Docker container oleh deploy.sh
+# Jika USE_NGINX=false, Nginx tidak digunakan sama sekali
 USE_NGINX={un_s}
 USE_EXTERNAL_NGINX={en_s}
+
+# ─── Seed Admin (hanya dipakai saat seed pertama kali) ───────
 SEED_ADMIN_EMAIL="{em}"
 SEED_ADMIN_PASSWORD="{pw}"
 SEED_ADMIN_NAME="{nm}"
