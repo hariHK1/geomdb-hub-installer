@@ -1,0 +1,12 @@
+# Override untuk mode geoportal — dimuat otomatis via COMPOSE_FILE di deploy.sh
+# saat GEOPORTAL_NETWORK terisi di .env. Jangan dimuat untuk standalone.
+
+services:
+  app:
+    networks:
+      - share_network
+
+networks:
+  share_network:
+    external: true
+    name: ${GEOPORTAL_NETWORK}

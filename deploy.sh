@@ -2099,6 +2099,68 @@ MAIL_TIMEOUT=10000
     print(f"  └──────────────────────────────────────────────────────────────────┘{NC}")
     print(); print(f"  {W}URL Aplikasi:{NC} {C}{full_url}{NC}"); print()
 
+def preview(cfg):
+    geo=cfg.get("_GEOPORTAL","2").strip()
+    app_url=cfg.get("APP_URL","").rstrip("/")
+    base_path="/geomdb-hub" if geo=="1" else ""
+    full_url=app_url+base_path
+    use_ng=yn(cfg.get("_USE_NGINX"),True); ext_ng=yn(cfg.get("_EXT_NGINX"),False)
+    wa_en=yn(cfg.get("_WA_ENABLED"),False)
+    gnet=cfg.get("GEOPORTAL_NETWORK","").strip()
+    em=cfg.get("SEED_ADMIN_EMAIL",""); pw=cfg.get("SEED_ADMIN_PASSWORD","")
+    nm=cfg.get("SEED_ADMIN_NAME","").strip() or "Administrator Sistem"
+    org=cfg.get("SEED_ADMIN_ORG","").strip() or "Badan Informasi Geospasial"
+    jb=cfg.get("SEED_ADMIN_JABATAN","").strip() or "System Administrator"
+    tel=cfg.get("SEED_ADMIN_TELEPON","").strip()
+    mu=cfg.get("MINIO_USER","").strip() or "geomdb_minio"
+    ph=port(cfg.get("PORT_HTTP"),"80"); phs=port(cfg.get("PORT_HTTPS"),"443")
+    pa=port(cfg.get("PORT_APP"),"3000"); ppg=port(cfg.get("PORT_PG"),"5432")
+    prd=port(cfg.get("PORT_REDIS"),"6379"); pmn=port(cfg.get("PORT_MINIO_API"),"9000")
+    pmc=port(cfg.get("PORT_MINIO_CON"),"9001"); pcs=port(cfg.get("PORT_PYCSW"),"8080")
+    pex=port(cfg.get("PORT_EXT"),"3007")
+    def csw2(k,d=""): return cfg.get(k,"").strip() or d
+    ct=csw2("CSW_TITLE","Geomdb Hub CSW"); cp=csw2("CSW_PROVIDER_NAME","Badan Informasi Geospasial")
+    ccn=csw2("CSW_CONTACT_NAME","Administrator")
+    ccc=csw2("CSW_CONTACT_CITY","Jakarta"); ccpv=csw2("CSW_CONTACT_PROVINCE","DKI Jakarta")
+    cce=csw2("CSW_CONTACT_EMAIL")
+    ng_mode=("Docker container (dikelola deploy.sh)" if use_ng and not ext_ng
+             else "Eksternal (Nginx di luar Docker)" if use_ng
+             else "Tidak digunakan (akses langsung via port)")
+    wa_lbl="Aktif (+Chromium, build besar)" if wa_en else "Nonaktif (skip Chromium)"
+    LB=28; VW=37
+    def row(lbl,val): print(f"  │  {lbl:<{LB}} {str(val)[:VW]:<{VW}}│")
+    def sep(): print("  ├──────────────────────────────────────────────────────────────────┤")
+    print()
+    print(f"{W}  ┌──────────────────────────────────────────────────────────────────┐")
+    print(f"  │          PRATINJAU KONFIGURASI — PERIKSA SEBELUM LANJUT         │{NC}")
+    sep()
+    row("URL Publik (lengkap):",full_url); row("Sub-path:",base_path or "(root /)")
+    sep()
+    row("Email admin:",em); row("Password admin:",pw)
+    row("Nama admin:",nm); row("Organisasi:",org); row("Jabatan:",jb)
+    if tel: row("No. WhatsApp:",tel)
+    sep()
+    row("Nginx:",ng_mode)
+    if use_ng and not ext_ng: row("Port HTTP/HTTPS:",f"{ph} / {phs}")
+    row("Port App:",pa); row("Port PostgreSQL:",ppg)
+    row("Port Redis:",prd); row("Port MinIO API:",pmn)
+    row("Port MinIO Console:",pmc); row("Port pycsw:",pcs)
+    row("Port ext-serv:",pex)
+    sep(); row("MinIO root user:",mu)
+    sep(); row("WhatsApp OTP:",wa_lbl)
+    if gnet: row("Geoportal Network:",gnet)
+    sep()
+    row("CSW Judul:",ct); row("CSW Penyedia:",cp)
+    row("CSW Kontak:",f"{ccn} / {cce or chr(8212)}"); row("CSW Kota:",f"{ccc}, {ccpv}")
+    print("  └──────────────────────────────────────────────────────────────────┘")
+    print()
+    print(f"  {Y}Password admin diambil dari Excel. Secret lain (DB, Redis, MinIO) di-generate otomatis.{NC}")
+    print()
+    ans=input("  Semua isian sudah benar? Lanjutkan generate .env? (y/N): ").strip().lower()
+    if ans!="y":
+        print(f"\n  {Y}Dibatalkan.{NC} Perbaiki file Excel dan jalankan ulang menu 9.\n")
+        sys.exit(2)
+
 if len(sys.argv)<2: err("Usage: script.py <xlsx> [geoportal] [nginx] [ext_nginx] [wa] [gnet]"); sys.exit(1)
 xlsx=sys.argv[1]
 if not os.path.isfile(xlsx): err(f"File tidak ditemukan: {xlsx}"); sys.exit(1)
@@ -2118,17 +2180,22 @@ if errs:
     for e in errs: print(f"     {Y}•{NC} {e}")
     print(); print(f"  {DIM}Buka file Excel, lengkapi kolom NILAI yang bertanda ★ Wajib, lalu simpan dan coba lagi.{NC}")
     sys.exit(1)
+preview(cfg)
 generate(cfg)
 GEOMDB_PY_EOF
-      if python3 "$_py_tmp" "$_excel_file" "$_xl_geoportal" "$_xl_use_nginx" "$_xl_ext_nginx" "$_xl_wa" "$_xl_gnet"; then
-        rm -f "$_py_tmp"
+      python3 "$_py_tmp" "$_excel_file" "$_xl_geoportal" "$_xl_use_nginx" "$_xl_ext_nginx" "$_xl_wa" "$_xl_gnet"
+      _py_rc=$?
+      rm -f "$_py_tmp"
+      if [[ $_py_rc -eq 0 ]]; then
         ok "File .env berhasil di-generate!"
         echo ""
         echo -e "  ${DIM}Langkah selanjutnya:${NC}"
         echo -e "  ${DIM}  • Deploy server → menu 4 (lalu atur SSL di menu 8)${NC}"
         return
+      elif [[ $_py_rc -eq 2 ]]; then
+        warn "Generate .env dibatalkan."
+        return
       else
-        rm -f "$_py_tmp"
         echo ""
         warn "Gagal membaca konfigurasi Excel."
         echo -e "  ${DIM}Periksa isian kolom NILAI di file Excel (field ★ Wajib harus terisi).${NC}"
@@ -2948,6 +3015,11 @@ fi
 if [[ ! -f ".env" ]]; then
   echo -e "\n${Y}⚠  File .env belum ditemukan — menjalankan setup awal...${NC}\n"
   fn_generate_env
+fi
+
+# Aktifkan override geoportal hanya jika GEOPORTAL_NETWORK terisi di .env
+if grep -qE '^GEOPORTAL_NETWORK=.+' .env 2>/dev/null; then
+  export COMPOSE_FILE="docker-compose.yml:docker-compose.geoportal.yml"
 fi
 
 main_menu
