@@ -188,6 +188,9 @@ services:
       NODE_ENV: production
       PORT: "${PORT_APP:-3000}"
       HOSTNAME: "0.0.0.0"
+      # URL absolut RUNTIME untuk link sisi-server (email/redirect/CSW/XML).
+      # Bisa diubah via .env + restart TANPA rebuild image.
+      APP_URL: "${APP_URL:-${NEXT_PUBLIC_APP_URL:-}}"
       DATABASE_URL: "postgresql://geomdb:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/geomdb_hub"
       REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379"
       MINIO_URL: "http://minio:9000"
