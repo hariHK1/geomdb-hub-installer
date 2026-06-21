@@ -21,8 +21,14 @@ cfg = tpl \
   .replace('${CSW_CONTACT_CITY}',       os.environ.get('CSW_CONTACT_CITY',       'Jakarta')) \
   .replace('${CSW_CONTACT_PROVINCE}',   os.environ.get('CSW_CONTACT_PROVINCE',   'DKI Jakarta')) \
   .replace('${CSW_CONTACT_POSTALCODE}', os.environ.get('CSW_CONTACT_POSTALCODE', '')) \
-  .replace('${CSW_CONTACT_PHONE}',      os.environ.get('CSW_CONTACT_PHONE',      '')) \
-  .replace('${CSW_CONTACT_EMAIL}',      os.environ.get('CSW_CONTACT_EMAIL',      ''))
+  .replace('${CSW_CONTACT_PHONE}',        os.environ.get('CSW_CONTACT_PHONE',        '')) \
+  .replace('${CSW_CONTACT_FAX}',          os.environ.get('CSW_CONTACT_FAX',          '')) \
+  .replace('${CSW_CONTACT_EMAIL}',        os.environ.get('CSW_CONTACT_EMAIL',        '')) \
+  .replace('${CSW_CONTACT_COUNTRY}',      os.environ.get('CSW_CONTACT_COUNTRY',      'Indonesia')) \
+  .replace('${CSW_CONTACT_URL}',          os.environ.get('CSW_CONTACT_URL',          '')) \
+  .replace('${CSW_CONTACT_HOURS}',        os.environ.get('CSW_CONTACT_HOURS',        '')) \
+  .replace('${CSW_CONTACT_INSTRUCTIONS}', os.environ.get('CSW_CONTACT_INSTRUCTIONS', '')) \
+  .replace('${CSW_CONTACT_ROLE}',         os.environ.get('CSW_CONTACT_ROLE',         'pointOfContact'))
 open('/tmp/pycsw.cfg', 'w').write(cfg)
 print("pycsw config written to /tmp/pycsw.cfg")
 EOF

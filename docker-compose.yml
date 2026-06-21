@@ -94,7 +94,13 @@ services:
       CSW_CONTACT_PROVINCE: ${CSW_CONTACT_PROVINCE:-DKI Jakarta}
       CSW_CONTACT_POSTALCODE: ${CSW_CONTACT_POSTALCODE:-}
       CSW_CONTACT_PHONE: ${CSW_CONTACT_PHONE:-}
+      CSW_CONTACT_FAX: ${CSW_CONTACT_FAX:-}
       CSW_CONTACT_EMAIL: ${CSW_CONTACT_EMAIL:-}
+      CSW_CONTACT_COUNTRY: ${CSW_CONTACT_COUNTRY:-Indonesia}
+      CSW_CONTACT_URL: ${CSW_CONTACT_URL:-}
+      CSW_CONTACT_HOURS: ${CSW_CONTACT_HOURS:-}
+      CSW_CONTACT_INSTRUCTIONS: ${CSW_CONTACT_INSTRUCTIONS:-}
+      CSW_CONTACT_ROLE: ${CSW_CONTACT_ROLE:-pointOfContact}
     volumes:
       - ./config/pycsw/pycsw.cfg.tpl:/etc/pycsw/pycsw.cfg.tpl:ro
       - ./config/pycsw/start.sh:/start.sh:ro
