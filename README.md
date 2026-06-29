@@ -80,7 +80,7 @@ Pejabat yang bertindak sebagai atasan seluruh Walidata, bersifat lintas-organisa
 
 #### ATASAN_PEMERIKSA
 
-Pejabat eselon II yang bertindak sebagai atasan seluruh Pemeriksa dalam satu organisasi. Akun ini bersifat opsional — jika tidak ada, setiap Pemeriksa mengatur email atasannya sendiri di *Pengaturan Atasan*.
+Pejabat yang bertindak sebagai atasan seluruh Pemeriksa dalam satu organisasi. **Wajib ada satu akun ATASAN_PEMERIKSA aktif per organisasi** — jika tidak ada, submit QC/QE oleh Pemeriksa diblokir dengan pesan error hingga akun didaftarkan oleh Admin/Walidata.
 
 **Tugas & fungsi:**
 
@@ -92,7 +92,8 @@ Pejabat eselon II yang bertindak sebagai atasan seluruh Pemeriksa dalam satu org
 **Rule:**
 
 - Hanya boleh ada **satu akun ATASAN_PEMERIKSA aktif per organisasi** — akun kedua akan diblokir saat aktivasi
-- Saat akun ATASAN_PEMERIKSA aktif di suatu org, notifikasi QC/QE dikirim ke akun ini, bukan ke email atasan manual yang diatur tiap Pemeriksa; pengaturan manual Pemeriksa tidak berlaku
+- Semua notifikasi QC/QE dikirim ke akun ATASAN_PEMERIKSA di organisasi yang sama — tidak ada fallback manual per-Pemeriksa
+- Jika akun ATASAN_PEMERIKSA dinonaktifkan, Pemeriksa di org tersebut tidak dapat mengajukan QC/QE sampai akun ATASAN_PEMERIKSA baru didaftarkan
 - Tidak dapat membuat atau mengubah metadata
 
 ---
@@ -325,17 +326,9 @@ stateDiagram-v2
 
 ---
 
-### Prioritas Atasan Pemeriksa (B1)
+### Atasan Pemeriksa
 
-Sistem menentukan ke mana email konfirmasi QC/QE dikirim berdasarkan urutan prioritas berikut:
-
-| Prioritas | Sumber | Kondisi |
-| --------- | ------ | ------- |
-| **1 (B1)** | Akun ATASAN_PEMERIKSA aktif di org | Ada akun dengan role ATASAN_PEMERIKSA di org yang sama |
-| **2** | `User.atasanEmail` (per-Pemeriksa) | Diatur di *Pengaturan Atasan* oleh Pemeriksa |
-| **3 (fallback)** | `OrganisasiSettings.atasanPemeriksaEmail` | Diatur di pengaturan org oleh Admin/Walidata |
-
-Jika prioritas B1 aktif, pengaturan manual Pemeriksa dan fallback org **tidak digunakan** — notifikasi hanya dikirim ke akun ATASAN_PEMERIKSA.
+Email konfirmasi QC/QE selalu dikirim ke akun **ATASAN_PEMERIKSA** aktif di organisasi yang sama dengan Pemeriksa. Tidak ada fallback lain — jika tidak ada akun ATASAN_PEMERIKSA aktif di org tersebut, submit QC/QE diblokir sampai akun didaftarkan.
 
 ---
 
@@ -430,17 +423,17 @@ Setiap perubahan status memicu notifikasi:
 
 | Mekanisme              | Keterangan                                                                    |
 | ---------------------- | ----------------------------------------------------------------------------- |
-| JWE session            | AES-256-GCM, 8 jam, di-blacklist saat logout/ganti password; blacklist TTL 7 hari |
-| Field-level encryption | Email, telepon, **dan email atasan Pemeriksa** disimpan AES-256-GCM di DB; migration-safe via `decryptOptional()` |
+| JWE session            | AES-256-GCM, maks 7 hari (idle timeout 1 hari), di-blacklist saat logout/ganti password/ganti email; blacklist TTL 7 hari |
+| Field-level encryption | Email dan telepon disimpan AES-256-GCM di DB; `ENCRYPTION_KEY` wajib 64-char hex (fail-closed — non-hex throw); migration-safe via `decryptOptional()` |
 | Email lookup           | HMAC-SHA256 deterministik (`emailHash`) — bukan plaintext                     |
 | CSRF protection        | Origin header check (primer) + Referer fallback (sekunder) untuk semua mutating request; fail-closed — request tanpa origin/referer yang dikenal langsung ditolak |
 | PoW Captcha            | Proof-of-Work SHA-256 (difficulty 4) sebelum submit login — cegah bot/brute force; challenge single-use disimpan di Redis 5 menit |
-| Rate limiting          | Redis atomic `SET NX EX` di semua endpoint sensitif: login, OTP verify (10 req/15 menit per IP), reset password (10 req/15 menit per IP), PDF token, antrian atasan, backup, konfirmasi token, bulk import pengguna |
-| Input validation       | Zod v4 di semua POST/PATCH/PUT endpoint                                        |
+| Rate limiting          | Redis atomic `SET NX EX` di semua endpoint sensitif: login, OTP verify (10 req/15 menit per IP), reset password (10 req/15 menit per IP), PDF token, antrian atasan, backup, konfirmasi token, bulk import pengguna, ArcGIS login relay (5 req/menit per IP) |
+| Input validation       | Zod v4 di semua POST/PATCH/PUT endpoint; XML import menolak `<!DOCTYPE` / `<!ENTITY` sebelum parsing (cegah XXE) |
 | IDOR protection        | PDF QC/QE hanya dapat diakses oleh org yang sama (PEMERIKSA/ATASAN_PEMERIKSA) atau pemilik (PRODUSEN); WALIDATA/ADMIN bersifat lintas-org; WALIDATA tidak bisa mengedit pengguna dari org lain |
 | SSRF guard             | `safeFetch()` dengan `redirect:'manual'`, validasi per-hop, blokir IPv4/IPv6 private + link-local |
 | SVG upload             | Magic bytes validation + CSP sandbox + `Content-Disposition: attachment` — cegah stored XSS |
-| OTP login              | Kode 6-digit via email/WhatsApp, opsional (default: nonaktif pada fresh install — aktifkan setelah SMTP dikonfigurasi); HMAC key fail-closed — `APP_SECRET` atau `JWT_SECRET` wajib diset |
+| OTP login              | Kode 6-digit via email/WhatsApp, opsional (default: nonaktif pada fresh install); perbandingan hash menggunakan `timingSafeEqual` — cegah timing attack; HMAC key fail-closed — `APP_SECRET` atau `JWT_SECRET` wajib diset |
 | Security headers       | CSP nonce per-request (tanpa `'unsafe-inline'`), HSTS (2 tahun), X-Frame-Options, Referrer-Policy, Permissions-Policy |
 | Idle session           | Logout otomatis setelah 1 hari tidak aktif (Redis idle key) |
 
