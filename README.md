@@ -8,7 +8,7 @@ Aplikasi web manajemen metadata geospasial berbasis standar **SNI ISO 19115-3 / 
 
 ### Peran Pengguna
 
-Sistem menggunakan empat peran (role) dengan hak akses yang berbeda-beda. Setiap akun user memiliki tepat satu peran.
+Sistem menggunakan enam peran (role) dengan hak akses yang berbeda-beda. Setiap akun user memiliki tepat satu peran.
 
 ---
 
@@ -41,7 +41,7 @@ Penanggung jawab data dan kualitas metadata. Merepresentasikan unit walidata yan
 
 - Mendaftarkan referensi organisasi produser data (via bulk import CSV/Excel atau satu per satu); setiap referensi dapat diberi **alias/akronim** yang ditampilkan di card katalog metadata
 - Mendaftarkan server geospasial (GeoServer, ArcGIS, CSW) yang dapat digunakan Produsen sebagai sumber import
-- Membuat dan mengelola akun Produsen dan Pemeriksa dari berbagai instansi
+- Membuat, mengelola, dan **mengimpor massal pengguna dari Excel (.xlsx)** dengan preview validasi per baris — Produsen, Pemeriksa, dan Atasan Pemeriksa dari berbagai instansi
 - Mengisi formulir **Quality Assurance (QA)** setelah metadata lolos QC/QE
 - Me-review dan memutuskan hasil QA: menyetujui (PUBLISHED) atau menolak (REJECTED) disertai catatan
 - Toggle visibilitas metadata yang sudah PUBLISHED menjadi PRIVATE (sementara) dan sebaliknya
@@ -54,7 +54,46 @@ Penanggung jawab data dan kualitas metadata. Merepresentasikan unit walidata yan
 - Dapat mengelola metadata dari instansi manapun — WALIDATA bersifat lintas organisasi
 - Keputusan review (DISETUJUI/DITOLAK) dicatat permanen beserta catatan dan timestamp (tidak bisa dihapus)
 - Notifikasi otomatis dikirim ke Produsen setiap kali keputusan review dibuat
-- WALIDATA hanya dapat mengelola akun PRODUSEN dan PEMERIKSA — tidak bisa membuat/mengedit ADMIN
+- WALIDATA hanya dapat mengelola akun PRODUSEN, PEMERIKSA, dan ATASAN_PEMERIKSA — tidak bisa membuat/mengedit ADMIN atau ATASAN_WALIDATA
+
+---
+
+#### ATASAN_WALIDATA
+
+Pejabat yang bertindak sebagai atasan seluruh Walidata, bersifat lintas-organisasi. Hanya ada **satu akun ATASAN_WALIDATA aktif** di seluruh sistem; dibuat dan dikelola oleh ADMIN saja.
+
+**Tugas & fungsi:**
+
+- Menerima notifikasi email konfirmasi QA dari semua Walidata aktif di seluruh sistem secara otomatis
+- Mengakses **Dashboard Antrian QA** (`/atasan-walidata`) — daftar dokumen QA yang menunggu konfirmasi beserta pratinjau detail metadata (abstrak, topik, bbox, batasan)
+- Membuka PDF dokumen QA langsung dari dashboard tanpa perlu token terpisah
+- Mengonfirmasi atau menolak dokumen QA via link email (satu klik) atau via tombol di dashboard
+
+**Rule:**
+
+- Hanya boleh ada **satu akun ATASAN_WALIDATA aktif** di seluruh sistem — akun kedua diblokir
+- Hanya ADMIN yang bisa membuat akun ATASAN_WALIDATA (tidak bisa dibuat via WALIDATA maupun import massal)
+- Tidak dapat membuat atau mengubah metadata
+- Penolakan oleh ATASAN_WALIDATA mengembalikan metadata ke status REJECTED
+
+---
+
+#### ATASAN_PEMERIKSA
+
+Pejabat eselon II yang bertindak sebagai atasan seluruh Pemeriksa dalam satu organisasi. Akun ini bersifat opsional — jika tidak ada, setiap Pemeriksa mengatur email atasannya sendiri di *Pengaturan Atasan*.
+
+**Tugas & fungsi:**
+
+- Menerima notifikasi email konfirmasi QC/QE dari semua Pemeriksa di organisasinya secara otomatis
+- Mengakses **Dashboard Antrian Pemeriksaan** (`/atasan-pemeriksa`) — daftar QC/QE yang menunggu konfirmasi beserta pratinjau detail metadata (abstrak, topik, bbox, batasan)
+- Membuka PDF dokumen QC/QE langsung dari dashboard tanpa perlu token terpisah
+- Mengonfirmasi atau menolak QC/QE via link email atau via dashboard
+
+**Rule:**
+
+- Hanya boleh ada **satu akun ATASAN_PEMERIKSA aktif per organisasi** — akun kedua akan diblokir saat aktivasi
+- Saat akun ATASAN_PEMERIKSA aktif di suatu org, notifikasi QC/QE dikirim ke akun ini, bukan ke email atasan manual yang diatur tiap Pemeriksa; pengaturan manual Pemeriksa tidak berlaku
+- Tidak dapat membuat atau mengubah metadata
 
 ---
 
@@ -104,27 +143,34 @@ Pegawai instansi yang bertugas membuat dan mendaftarkan metadata geospasial.
 
 #### Ringkasan Matriks Akses
 
-| Fitur                                  | ADMIN | WALIDATA | PEMERIKSA | PRODUSEN |
-| -------------------------------------- | :---: | :------: | :-------: | :------: |
-| Buat metadata                          |   ✓   |    —     |     —     |    ✓     |
-| Edit metadata                          |   ✓   |    —     |     —     |    ✓\*   |
-| Lihat metadata semua org               |   ✓   |    ✓     |     —     |    —     |
-| Ajukan ke pemeriksaan QC/QE            |   ✓   |    —     |     —     |    ✓     |
-| Lampirkan SPD/KAK/Pedoman saat submit  |   —   |    —     |     —     |    ✓     |
-| Lihat dokumen SPD/KAK/Pedoman          |   ✓   |    ✓     |     ✓     |    ✓\*\* |
-| Isi formulir QC/QE                     |   —   |    —     |     ✓     |    —     |
-| Isi formulir QA                        |   ✓   |    ✓     |     —     |    —     |
-| TTE otomatis saat atasan konfirmasi    |   —   |    —   (sistem)  |   —   |    —     |
-| Toggle PUBLISHED ↔ PRIVATE             |  ✓    |    ✓     |     —     |    —     |
-| Kelola referensi organisasi + alias    |   ✓   |    ✓     |     —     |    —     |
-| Kelola pengguna                        |   ✓   |  ✓\*\*\* |    —     |    —     |
-| Konfigurasi sistem                     |   ✓   |    —     |     —     |    —     |
-| Dashboard analitik                     |   ✓   |    ✓     |     —     |    —     |
-| Log aktivitas                          |   ✓   |    ✓     |     —     |    —     |
+| Fitur                                  | ADMIN | WALIDATA | ATASAN_WALIDATA | ATASAN_PEMERIKSA | PEMERIKSA | PRODUSEN |
+| -------------------------------------- | :---: | :------: | :-------------: | :--------------: | :-------: | :------: |
+| Buat metadata                          |   ✓   |    —     |        —        |        —         |     —     |    ✓     |
+| Edit metadata                          |   ✓   |    —     |        —        |        —         |     —     |    ✓\*   |
+| Lihat metadata semua org               |   ✓   |    ✓     |        —        |        —         |     —     |    —     |
+| Ajukan ke pemeriksaan QC/QE            |   ✓   |    —     |        —        |        —         |     —     |    ✓     |
+| Lampirkan SPD/KAK/Pedoman saat submit  |   —   |    —     |        —        |        —         |     —     |    ✓     |
+| Lihat dokumen SPD/KAK/Pedoman          |   ✓   |    ✓     |        —        |        —         |     ✓     |    ✓\*\* |
+| Isi formulir QC/QE                     |   —   |    —     |        —        |        —         |     ✓     |    —     |
+| Dashboard Antrian QC/QE                |   —   |    —     |        —        |        ✓         |     —     |    —     |
+| Konfirmasi QC/QE (via email/dashboard) |   —   |    —     |        —        |        ✓         |     —     |    —     |
+| Lihat PDF QC/QE (org sendiri)          |   ✓   |    ✓     |        —        |        ✓         |     ✓     |    ✓\*\* |
+| Isi formulir QA                        |   ✓   |    ✓     |        —        |        —         |     —     |    —     |
+| Dashboard Antrian QA                   |   —   |    —     |        ✓        |        —         |     —     |    —     |
+| Konfirmasi QA (via email/dashboard)    |   —   |    —     |        ✓        |        —         |     —     |    —     |
+| TTE otomatis saat atasan konfirmasi    |   —   |   sistem |      sistem     |      sistem      |   sistem  |    —     |
+| Toggle PUBLISHED ↔ PRIVATE             |   ✓   |    ✓     |        —        |        —         |     —     |    —     |
+| Kelola referensi organisasi + alias    |   ✓   |    ✓     |        —        |        —         |     —     |    —     |
+| Kelola pengguna                        |   ✓   |  ✓\*\*\* |        —        |        —         |     —     |    —     |
+| Import pengguna massal Excel           |   ✓   | ✓\*\*\*\*|        —        |        —         |     —     |    —     |
+| Konfigurasi sistem                     |   ✓   |    —     |        —        |        —         |     —     |    —     |
+| Dashboard analitik                     |   ✓   |    ✓     |        —        |        —         |     —     |    —     |
+| Log aktivitas                          |   ✓   |    ✓     |        —        |        —         |     —     |    —     |
 
 > \* PRODUSEN hanya bisa edit metadata dari organisasi sendiri.
-> \*\* PRODUSEN hanya dapat melihat dokumen SPD yang mereka sendiri unggah.
-> \*\*\* WALIDATA hanya dapat mengelola akun PRODUSEN dan PEMERIKSA — tidak bisa membuat/mengedit ADMIN.
+> \*\* PRODUSEN hanya dapat melihat dokumen SPD yang mereka sendiri unggah; PDF QC/QE hanya miliknya.
+> \*\*\* WALIDATA hanya dapat mengelola akun PRODUSEN, PEMERIKSA, dan ATASAN_PEMERIKSA — tidak bisa membuat/mengedit ADMIN atau ATASAN_WALIDATA.
+> \*\*\*\* WALIDATA hanya dapat mengimpor PRODUSEN, PEMERIKSA, dan ATASAN_PEMERIKSA via Excel; WALIDATA dan ATASAN_WALIDATA tidak bisa diimpor massal — hanya dibuat satu per satu oleh ADMIN.
 
 ---
 
@@ -279,6 +325,20 @@ stateDiagram-v2
 
 ---
 
+### Prioritas Atasan Pemeriksa (B1)
+
+Sistem menentukan ke mana email konfirmasi QC/QE dikirim berdasarkan urutan prioritas berikut:
+
+| Prioritas | Sumber | Kondisi |
+| --------- | ------ | ------- |
+| **1 (B1)** | Akun ATASAN_PEMERIKSA aktif di org | Ada akun dengan role ATASAN_PEMERIKSA di org yang sama |
+| **2** | `User.atasanEmail` (per-Pemeriksa) | Diatur di *Pengaturan Atasan* oleh Pemeriksa |
+| **3 (fallback)** | `OrganisasiSettings.atasanPemeriksaEmail` | Diatur di pengaturan org oleh Admin/Walidata |
+
+Jika prioritas B1 aktif, pengaturan manual Pemeriksa dan fallback org **tidak digunakan** — notifikasi hanya dikirim ke akun ATASAN_PEMERIKSA.
+
+---
+
 ### Mode Alur Konfirmasi Atasan (STRICT / PARALEL)
 
 Walidata dapat memilih dua mode alur konfirmasi atasan di **Pengaturan Org. → Alur QC/QE**:
@@ -327,8 +387,9 @@ Setiap perubahan status memicu notifikasi:
 | Peristiwa                             | Penerima                              |
 | ------------------------------------- | ------------------------------------- |
 | Metadata diajukan ke pemeriksaan      | (log aktivitas)                       |
-| QC/QE menunggu konfirmasi atasan      | Atasan Eselon II (email)              |
+| QC/QE menunggu konfirmasi atasan      | Atasan Eselon II / ATASAN_PEMERIKSA (email) |
 | Metadata masuk status REVIEW          | Semua Walidata aktif (email + in-app) |
+| Walidata ajukan QA ke Atasan Walidata | ATASAN_WALIDATA (email)               |
 | QA disetujui / ditolak                | Produsen (email + WA + in-app)        |
 | Metadata disetujui / ditolak Walidata | Produsen (email + in-app)             |
 
@@ -369,14 +430,19 @@ Setiap perubahan status memicu notifikasi:
 
 | Mekanisme              | Keterangan                                                                    |
 | ---------------------- | ----------------------------------------------------------------------------- |
-| JWE session            | AES-256-GCM, 8 jam, di-blacklist saat logout/ganti password                   |
-| Field-level encryption | Email & telepon user disimpan AES-256-GCM di DB                               |
+| JWE session            | AES-256-GCM, 8 jam, di-blacklist saat logout/ganti password; blacklist TTL 7 hari |
+| Field-level encryption | Email, telepon, **dan email atasan Pemeriksa** disimpan AES-256-GCM di DB; migration-safe via `decryptOptional()` |
 | Email lookup           | HMAC-SHA256 deterministik (`emailHash`) — bukan plaintext                     |
-| CSRF protection        | Origin header check untuk semua mutating request                              |
+| CSRF protection        | Origin header check (primer) + Referer fallback (sekunder) untuk semua mutating request; fail-closed — request tanpa origin/referer yang dikenal langsung ditolak |
 | PoW Captcha            | Proof-of-Work SHA-256 (difficulty 4) sebelum submit login — cegah bot/brute force; challenge single-use disimpan di Redis 5 menit |
-| Rate limiting          | In-memory sliding window (endpoint publik) + Redis atomic `SET NX EX` (login) |
-| OTP login              | Kode 6-digit via email/WhatsApp, opsional (default: nonaktif pada fresh install — aktifkan setelah SMTP dikonfigurasi) |
-| Security headers       | CSP, HSTS (2 tahun), X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
+| Rate limiting          | Redis atomic `SET NX EX` di semua endpoint sensitif: login, OTP verify (10 req/15 menit per IP), reset password (10 req/15 menit per IP), PDF token, antrian atasan, backup, konfirmasi token, bulk import pengguna |
+| Input validation       | Zod v4 di semua POST/PATCH/PUT endpoint                                        |
+| IDOR protection        | PDF QC/QE hanya dapat diakses oleh org yang sama (PEMERIKSA/ATASAN_PEMERIKSA) atau pemilik (PRODUSEN); WALIDATA/ADMIN bersifat lintas-org; WALIDATA tidak bisa mengedit pengguna dari org lain |
+| SSRF guard             | `safeFetch()` dengan `redirect:'manual'`, validasi per-hop, blokir IPv4/IPv6 private + link-local |
+| SVG upload             | Magic bytes validation + CSP sandbox + `Content-Disposition: attachment` — cegah stored XSS |
+| OTP login              | Kode 6-digit via email/WhatsApp, opsional (default: nonaktif pada fresh install — aktifkan setelah SMTP dikonfigurasi); HMAC key fail-closed — `APP_SECRET` atau `JWT_SECRET` wajib diset |
+| Security headers       | CSP nonce per-request (tanpa `'unsafe-inline'`), HSTS (2 tahun), X-Frame-Options, Referrer-Policy, Permissions-Policy |
+| Idle session           | Logout otomatis setelah 1 hari tidak aktif (Redis idle key) |
 
 ### Infrastruktur
 
@@ -939,6 +1005,19 @@ docker compose up -d --build app
 ---
 
 ## Backup & Recovery
+
+### Backup Metadata via UI (Admin)
+
+ADMIN dapat mengunduh backup metadata langsung dari browser melalui halaman `/admin/backup`:
+
+1. Pilih satu atau banyak record (atau centang "Pilih Semua")
+2. Pilih konten yang ingin diikutsertakan: **Metadata JSON**, **XML (ISO 19139 + ISO 19115-3)**, **File Dokumen (PDF)**
+3. Klik **Download ZIP**
+
+Fitur tambahan di halaman backup:
+- **Tombol Detail** — lihat isian metadata lengkap + status dokumen QC/QE/QA tanpa perlu record berstatus PUBLISHED
+- **Filter** kolom Instansi, Tipe Data, Status
+- **Pencarian** judul & organisasi
 
 ### Strategi Backup
 
