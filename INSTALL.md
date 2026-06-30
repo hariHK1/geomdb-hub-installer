@@ -36,17 +36,17 @@ Siapkan Personal Access Token dari GitHub → Settings → Developer settings �
 
 ### Mode 2: Offline (tanpa internet)
 
-**Download file berikut dari halaman Rilis:**
+**Download file dari halaman Rilis:**
 
 👉 **https://github.com/hariHK1/geomdb-hub-installer/releases/latest**
 
 | File | Keterangan | Wajib? |
 | ---- | ---------- | :----: |
-| `geomdb-hub-vX.Y.Z-installer.tar.gz` | Deployment files (docker-compose, deploy.sh, config) | ✓ |
-| `geomdb-hub-vX.Y.Z-images.tar.gz` | Docker image aplikasi | ✓ |
-| `geomdb-hub-vX.Y.Z-infra.tar.gz` | Docker image infrastruktur (postgres, redis, minio, dll.) | Hanya jika server baru / belum punya image infra |
+| `geomdb-hub-vX.Y.Z-standalone-installer.tar.gz` | App image + deployment files untuk server **mandiri** (domain root) | Pilih salah satu |
+| `geomdb-hub-vX.Y.Z-geoportal-installer.tar.gz` | App image + deployment files untuk dipasang **di bawah GeoNode** (sub-path) | ↑ |
+| `geomdb-hub-vX.Y.Z-infra.tar.gz` | Image infrastruktur: PostgreSQL, MinIO, Redis, pycsw, Nginx, Certbot (~800 MB) | Hanya jika server belum punya image-image ini |
 
-> **Tips:** Anda dapat mengunduh file-file ini lewat browser di komputer lokal, lalu upload ke server via `scp`:
+> **Tips:** Unduh via browser di komputer lokal, lalu upload ke server:
 > ```bash
 > scp geomdb-hub-vX.Y.Z-*.tar.gz user@ip-server:/home/user/
 > ```
@@ -54,13 +54,12 @@ Siapkan Personal Access Token dari GitHub → Settings → Developer settings �
 Setelah semua file berada di server:
 
 ```bash
-# Ekstrak installer
-tar -xzf geomdb-hub-vX.Y.Z-installer.tar.gz
-cd geomdb-hub
+# (Hanya jika server baru / belum ada image infra) Load image infrastruktur dulu
+docker load < geomdb-hub-vX.Y.Z-infra.tar.gz
 
-# Pindahkan/salin file images ke folder yang sama
-mv /home/user/geomdb-hub-vX.Y.Z-images.tar.gz .
-mv /home/user/geomdb-hub-vX.Y.Z-infra.tar.gz .   # jika server baru
+# Ekstrak installer (ganti nama sesuai yang diunduh: standalone atau geoportal)
+tar -xzf geomdb-hub-vX.Y.Z-standalone-installer.tar.gz
+cd geomdb-hub-vX.Y.Z
 
 # Jalankan wizard
 bash deploy.sh
@@ -127,9 +126,23 @@ bash deploy.sh
 
 ### Mode offline:
 ```bash
-# Terima file images versi baru dari maintainer
-docker load < geomdb-hub-vNEW-images.tar.gz
-docker compose up -d
+# Download installer versi baru dari halaman Rilis:
+# https://github.com/hariHK1/geomdb-hub-installer/releases/latest
+# (infra.tar.gz hanya diunduh jika ada perubahan versi image infrastruktur)
+# Lalu upload: scp geomdb-hub-vNEW-*.tar.gz user@ip-server:/home/user/
+
+# (Jika ada infra baru) Load image infra dulu
+docker load < geomdb-hub-vNEW-infra.tar.gz
+
+# Ekstrak installer versi baru (standalone atau geoportal)
+tar -xzf geomdb-hub-vNEW-standalone-installer.tar.gz
+
+# Salin .env dari instalasi lama agar konfigurasi tidak hilang
+cp ~/geomdb-hub-vOLD/.env ~/geomdb-hub-vNEW/.env
+
+# Jalankan wizard — pilih File installer saat ditanya
+cd geomdb-hub-vNEW
+bash deploy.sh
 ```
 
 ---
