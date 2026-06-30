@@ -36,19 +36,31 @@ Siapkan Personal Access Token dari GitHub → Settings → Developer settings �
 
 ### Mode 2: Offline (tanpa internet)
 
-Dapatkan file berikut dari maintainer atau tim IT:
-- `geomdb-hub-vX.Y.Z-installer.tar.gz` — deployment files
-- `geomdb-hub-vX.Y.Z-images.tar.gz` — app images
-- `geomdb-hub-vX.Y.Z-infra.tar.gz` — infra images *(jika server baru)*
+**Download file berikut dari halaman Rilis:**
+
+👉 **https://github.com/hariHK1/geomdb-hub-installer/releases/latest**
+
+| File | Keterangan | Wajib? |
+| ---- | ---------- | :----: |
+| `geomdb-hub-vX.Y.Z-installer.tar.gz` | Deployment files (docker-compose, deploy.sh, config) | ✓ |
+| `geomdb-hub-vX.Y.Z-images.tar.gz` | Docker image aplikasi | ✓ |
+| `geomdb-hub-vX.Y.Z-infra.tar.gz` | Docker image infrastruktur (postgres, redis, minio, dll.) | Hanya jika server baru / belum punya image infra |
+
+> **Tips:** Anda dapat mengunduh file-file ini lewat browser di komputer lokal, lalu upload ke server via `scp`:
+> ```bash
+> scp geomdb-hub-vX.Y.Z-*.tar.gz user@ip-server:/home/user/
+> ```
+
+Setelah semua file berada di server:
 
 ```bash
 # Ekstrak installer
 tar -xzf geomdb-hub-vX.Y.Z-installer.tar.gz
 cd geomdb-hub
 
-# Letakkan file images di folder yang sama
-cp /path/to/geomdb-hub-vX.Y.Z-images.tar.gz .
-cp /path/to/geomdb-hub-vX.Y.Z-infra.tar.gz .   # jika server baru
+# Pindahkan/salin file images ke folder yang sama
+mv /home/user/geomdb-hub-vX.Y.Z-images.tar.gz .
+mv /home/user/geomdb-hub-vX.Y.Z-infra.tar.gz .   # jika server baru
 
 # Jalankan wizard
 bash deploy.sh

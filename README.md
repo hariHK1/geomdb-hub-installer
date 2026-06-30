@@ -100,7 +100,7 @@ Pejabat yang bertindak sebagai atasan seluruh Pemeriksa dalam satu organisasi. *
 
 #### PEMERIKSA
 
-Petugas kualitas data yang bertugas melakukan pemeriksaan QC/QE terhadap metadata yang diajukan Produsen.
+Petugas kualitas data yang bertugas melakukan pemeriksaan QC/QE terhadap metadata yang diajukan Produsen, serta mereview hasil revisi metadata yang sudah pernah dipublish.
 
 **Tugas & fungsi:**
 
@@ -110,12 +110,16 @@ Petugas kualitas data yang bertugas melakukan pemeriksaan QC/QE terhadap metadat
   - **A. Isi Form QC/QE Sistem** — isi formulir **Quality Control (QC)** dan/atau **Quality Evaluation (QE)** secara terstruktur, simpan draft, lalu ajukan ke atasan eselon II; setelah atasan mengkonfirmasi via link email, metadata masuk status REVIEW
   - **B. Upload Dokumen QC/QE (PDF)** — unggah dokumen yang sudah dibuat di luar sistem; dapat memilih QC saja, QE saja, atau QC dan QE sekaligus; metadata langsung masuk REVIEW **tanpa** konfirmasi atasan; dapat pula melampirkan SPD/KAK/Pedoman sebagai referensi tambahan (opsional)
   - **C. Lewati QC/QE/QA** — metadata langsung masuk REVIEW tanpa pemeriksaan; dokumen yang diterbitkan akan menampilkan badge *"Belum QC/QE/QA"*
+- **Review Revisi** — saat Produsen mengirimkan ulang metadata yang sudah pernah dipublish (alur revisi), metadata masuk status `REVISI`; Pemeriksa melihat **diff perubahan** (perbandingan snapshot versi published vs versi terkini) lalu memutuskan:
+  - **Setujui** → metadata masuk `REVIEW (isRevisi)` untuk persetujuan akhir Walidata
+  - **Tolak** (wajib disertai catatan) → metadata kembali ke `DRAFT (isRevisi)` agar Produsen perbaiki
 
 **Rule:**
 
-- Hanya dapat melihat dan mengisi QC/QE untuk metadata dari **organisasi sendiri**
+- Hanya dapat melihat dan mengisi QC/QE untuk metadata dari **organisasi sendiri**; lintas-org jika `allowLintasOrgReviewer` diaktifkan Walidata
 - Tidak dapat membuat metadata baru atau mengubah isi metadata
 - Metode A memerlukan konfirmasi atasan eselon II; metode B dan C tidak memerlukan konfirmasi atasan
+- Tolak revisi **wajib** menyertakan catatan — sistem memblokir tanpa catatan
 - Tidak dapat menyetujui/menolak hasil QA sendiri — itu domain WALIDATA
 
 ---
@@ -130,6 +134,7 @@ Pegawai instansi yang bertugas membuat dan mendaftarkan metadata geospasial.
 - Melengkapi isian metadata: judul, abstrak, kata kunci, bounding box, CRS, kontak, distribusi, silsilah, dll.
 - Upload thumbnail dan file distribusi
 - Mengajukan metadata ke proses pemeriksaan QC/QE — saat submit muncul dialog konfirmasi dengan opsi melampirkan dokumen **SPD/KAK/Pedoman** (PDF, opsional) sebagai referensi bagi Pemeriksa
+- **Revisi metadata yang sudah PUBLISHED** — jika Walidata membuka jalur revisi, Produsen dapat mengedit metadata berstatus `DRAFT (isRevisi)` lalu submit; metadata masuk `REVISI` (tanpa QC/QE ulang) untuk diperiksa Pemeriksa dan kemudian disetujui Walidata
 - Melihat riwayat review dan catatan penolakan dari Walidata
 - Mengekspor metadata ke format ISO 19139 XML
 
@@ -139,6 +144,7 @@ Pegawai instansi yang bertugas membuat dan mendaftarkan metadata geospasial.
 - Tidak dapat mengisi formulir QC/QE — itu domain PEMERIKSA
 - Tidak bisa mempublish sendiri; harus melalui proses pemeriksaan (PEMERIKSA) dan review (WALIDATA)
 - Metadata yang ditolak (REJECTED) dapat diedit ulang dan diajukan kembali (beserta dokumen SPD baru jika diperlukan)
+- Metadata revisi yang ditolak Pemeriksa kembali ke `DRAFT (isRevisi)` dan dapat diperbaiki lalu submit ulang
 
 ---
 
@@ -156,6 +162,8 @@ Pegawai instansi yang bertugas membuat dan mendaftarkan metadata geospasial.
 | Dashboard Antrian QC/QE                |   —   |    —     |        —        |        ✓         |     —     |    —     |
 | Konfirmasi QC/QE (via email/dashboard) |   —   |    —     |        —        |        ✓         |     —     |    —     |
 | Lihat PDF QC/QE (org sendiri)          |   ✓   |    ✓     |        —        |        ✓         |     ✓     |    ✓\*\* |
+| Submit revisi metadata PUBLISHED       |   —   |    —     |        —        |        —         |     —     |    ✓     |
+| Review revisi (REVISI → REVIEW/DRAFT)  |   ✓   |    —     |        —        |        —         |     ✓     |    —     |
 | Isi formulir QA                        |   ✓   |    ✓     |        —        |        —         |     —     |    —     |
 | Dashboard Antrian QA                   |   —   |    —     |        ✓        |        —         |     —     |    —     |
 | Konfirmasi QA (via email/dashboard)    |   —   |    —     |        ✓        |        —         |     —     |    —     |
@@ -286,7 +294,8 @@ flowchart TD
 ```mermaid
 flowchart LR
     subgraph Dashboard ["Dashboard Metadata"]
-        P1["PRODUSEN / PEMERIKSA<br/>Hanya data organisasi sendiri<br/>DRAFT · QCQE_PROCESS · REVIEW · PUBLISHED · REJECTED"]
+        P1["PRODUSEN<br/>Hanya data organisasi sendiri<br/>DRAFT · QCQE_PROCESS · REVIEW · PUBLISHED · REJECTED"]
+        P2["PEMERIKSA<br/>Hanya data organisasi sendiri (+ lintas org jika diizinkan)<br/>QCQE_PROCESS · REVISI"]
         WA["WALIDATA / ADMIN<br/>Semua data semua organisasi"]
     end
     subgraph Katalog ["Katalog Publik /katalog"]
@@ -313,14 +322,20 @@ stateDiagram-v2
 
     PUBLISHED --> PRIVATE : Walidata sembunyikan
     PRIVATE --> PUBLISHED : Walidata publikasi ulang
+
+    PUBLISHED --> DRAFT : Walidata buka jalur revisi</br>(isRevisi = true)
+    DRAFT --> REVISI : Produsen submit revisi</br>(tanpa QC/QE ulang)
+    REVISI --> REVIEW : Pemeriksa setujui revisi</br>(isRevisi tetap true)
+    REVISI --> DRAFT : Pemeriksa tolak revisi</br>(wajib catatan)
 ```
 
 | Status         | Keterangan                                                         | Siapa yang dapat mengubah              |
 | -------------- | ------------------------------------------------------------------ | -------------------------------------- |
-| `DRAFT`        | Baru dibuat / ditolak, sedang dilengkapi                           | Produsen (dapat lampirkan SPD saat submit) |
+| `DRAFT`        | Baru dibuat / ditolak / dibuka untuk revisi, sedang dilengkapi     | Produsen (dapat lampirkan SPD saat submit) |
 | `QCQE_PROCESS` | Dalam proses pemeriksaan QC/QE oleh Pemeriksa; SPD dari Produsen dapat dilihat Pemeriksa | — (otomatis saat submit) |
-| `REVIEW`       | Pemeriksaan selesai, menunggu tinjauan Walidata                    | — (otomatis: via konfirmasi atasan, upload PDF, atau lewati) |
-| `PUBLISHED`    | Disetujui Walidata & QA ditandatangani, tersedia di katalog publik | Walidata (publish/private)             |
+| `REVISI`       | Metadata revisi (isRevisi=true) sedang diperiksa Pemeriksa — tanpa QC/QE ulang; tampil diff vs versi published | Pemeriksa (setujui → REVIEW / tolak → DRAFT) |
+| `REVIEW`       | Pemeriksaan selesai, menunggu tinjauan Walidata                    | — (otomatis: via konfirmasi atasan, upload PDF, atau lewati; atau dari Pemeriksa untuk revisi) |
+| `PUBLISHED`    | Disetujui Walidata & QA ditandatangani, tersedia di katalog publik | Walidata (publish/private/buka revisi) |
 | `PRIVATE`      | Sementara disembunyikan dari katalog publik                        | Walidata                               |
 | `REJECTED`     | Ditolak Walidata, dapat diajukan ulang                             | Produsen (edit → submit ulang)         |
 
@@ -385,6 +400,9 @@ Setiap perubahan status memicu notifikasi:
 | Walidata ajukan QA ke Atasan Walidata | ATASAN_WALIDATA (email)               |
 | QA disetujui / ditolak                | Produsen (email + WA + in-app)        |
 | Metadata disetujui / ditolak Walidata | Produsen (email + in-app)             |
+| Revisi diajukan Produsen (→ REVISI)   | Pemeriksa org (email + in-app)        |
+| Pemeriksa setujui revisi (→ REVIEW)   | Produsen (in-app)                     |
+| Pemeriksa tolak revisi (→ DRAFT)      | Produsen (in-app) + Walidata (in-app) |
 
 ---
 
