@@ -211,9 +211,9 @@ _ensure_infra_images() {
   done
   echo ""
 
-  # Cari geomdb-infra-*.tar.gz
+  # Cari bundle infra: nama lama (geomdb-infra-*.tar.gz) ATAU nama rilis baru (geomdb-hub-*-infra.tar.gz)
   local infra_tars=()
-  mapfile -t infra_tars < <(ls geomdb-infra-*.tar.gz 2>/dev/null || true)
+  mapfile -t infra_tars < <(ls geomdb-infra-*.tar.gz geomdb-hub-*-infra.tar.gz 2>/dev/null || true)
 
   if [[ ${#infra_tars[@]} -gt 0 ]]; then
     local infra_tar="${infra_tars[0]}"
@@ -299,9 +299,11 @@ _apply_install_method() {
       ;;
     tarball)
       local tarfiles=()
-      mapfile -t tarfiles < <(ls geomdb-hub-*.tar.gz 2>/dev/null || true)
+      # Hanya cocokkan Docker image bundle: *-standalone.tar.gz / *-geoportal.tar.gz
+      # Jangan tangkap *-installer.tar.gz (installer package) atau *-infra.tar.gz
+      mapfile -t tarfiles < <(ls geomdb-hub-*-standalone.tar.gz geomdb-hub-*-geoportal.tar.gz 2>/dev/null || true)
       if [[ ${#tarfiles[@]} -eq 0 ]]; then
-        warn "Tidak ada file geomdb-hub-*.tar.gz di folder ini."
+        warn "Tidak ada file Docker image bundle (geomdb-hub-*-standalone.tar.gz atau geomdb-hub-*-geoportal.tar.gz) di folder ini."
         echo ""
         # Default: repo PUBLIK geomdb-hub-installer → unduh anonim tanpa token.
         # Override ke repo lain (mis. privat) via env GEOMDB_GH_REPO bila perlu.
@@ -390,7 +392,7 @@ _apply_install_method() {
         cp "$_img" .
         rm -f "$_asset"; rm -rf "geomdb-hub-${_tag}"
         ok "Image bundle siap: $(basename "$_img")"
-        mapfile -t tarfiles < <(ls geomdb-hub-*.tar.gz 2>/dev/null || true)
+        mapfile -t tarfiles < <(ls geomdb-hub-*-standalone.tar.gz geomdb-hub-*-geoportal.tar.gz 2>/dev/null || true)
         [[ ${#tarfiles[@]} -eq 0 ]] && { err "Image bundle tidak ditemukan setelah unduh."; return 1; }
       fi
       local tarfile="${tarfiles[0]}"
