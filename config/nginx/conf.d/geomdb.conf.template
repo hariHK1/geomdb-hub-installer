@@ -6,7 +6,7 @@ upstream nextjs {
 
 # ─── HTTP — redirect ke HTTPS + Let's Encrypt challenge ───────────────────────
 server {
-    listen 80;
+    listen 80 default_server;
     server_name _;
 
     # Let's Encrypt webroot challenge (certbot menulis ke sini)
