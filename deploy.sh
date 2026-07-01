@@ -303,6 +303,31 @@ _apply_install_method() {
       # Jangan tangkap *-installer.tar.gz (installer package) atau *-infra.tar.gz
       mapfile -t tarfiles < <(ls geomdb-hub-*-standalone.tar.gz geomdb-hub-*-geoportal.tar.gz 2>/dev/null || true)
       if [[ ${#tarfiles[@]} -eq 0 ]]; then
+        # Cek apakah ada *-installer.tar.gz yang mengandung inner bundle
+        local installer_tars=()
+        mapfile -t installer_tars < <(ls geomdb-hub-*-standalone-installer.tar.gz geomdb-hub-*-geoportal-installer.tar.gz 2>/dev/null || true)
+        if [[ ${#installer_tars[@]} -gt 0 ]]; then
+          local inst_tar="${installer_tars[0]}"
+          info "Ditemukan installer package: ${inst_tar} — mengekstrak Docker image bundle..."
+          local _inner
+          _inner=$(tar -tzf "$inst_tar" 2>/dev/null | grep -E 'geomdb-hub-.*-(standalone|geoportal)\.tar\.gz$' | head -1)
+          if [[ -z "$_inner" ]]; then
+            err "Tidak dapat menemukan Docker image bundle di dalam ${inst_tar}."
+          else
+            tar -xzf "$inst_tar" --strip-components=1 "$_inner" 2>/dev/null \
+              || tar -xzf "$inst_tar" "$_inner" 2>/dev/null
+            local _extracted
+            _extracted=$(basename "$_inner")
+            if [[ -f "$_extracted" ]]; then
+              ok "Bundle diekstrak: ${_extracted}"
+              mapfile -t tarfiles < <(ls geomdb-hub-*-standalone.tar.gz geomdb-hub-*-geoportal.tar.gz 2>/dev/null || true)
+            else
+              err "Gagal mengekstrak ${_inner} dari ${inst_tar}."
+            fi
+          fi
+        fi
+      fi
+      if [[ ${#tarfiles[@]} -eq 0 ]]; then
         warn "Tidak ada file Docker image bundle (geomdb-hub-*-standalone.tar.gz atau geomdb-hub-*-geoportal.tar.gz) di folder ini."
         echo ""
         # Default: repo PUBLIK geomdb-hub-installer → unduh anonim tanpa token.
