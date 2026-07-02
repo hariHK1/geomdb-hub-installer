@@ -126,8 +126,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     env_file:
-      - path: ./ext_serv-main/.env
-        required: false
+      - ./ext_serv-main/.env
     environment:
       - NODE_ENV=production
       - PORT=${PORT_EXT_SERV:-3007}

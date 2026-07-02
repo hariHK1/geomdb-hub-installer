@@ -545,6 +545,10 @@ fn_deploy() {
     info "Mode offline (tarball) — memeriksa cache image infra..."
     _ensure_infra_images || return 1
   fi
+  # ext_serv-main/.env opsional (konfigurasi WA extra), tapi wajib ada sebagai file
+  # agar kompatibel dengan Compose versi lama yang tidak support {path,required} syntax
+  mkdir -p ext_serv-main && touch ext_serv-main/.env
+
   docker compose up -d --remove-orphans postgres redis minio pycsw
   ok "Infra containers running."
 
@@ -1553,6 +1557,10 @@ fn_deploy_local() {
     info "Mode offline (tarball) — memeriksa cache image infra..."
     _ensure_infra_images || return 1
   fi
+  # ext_serv-main/.env opsional (konfigurasi WA extra), tapi wajib ada sebagai file
+  # agar kompatibel dengan Compose versi lama yang tidak support {path,required} syntax
+  mkdir -p ext_serv-main && touch ext_serv-main/.env
+
   docker compose up -d --remove-orphans postgres redis minio pycsw
   ok "Infra containers running."
 
