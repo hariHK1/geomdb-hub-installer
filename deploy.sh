@@ -624,11 +624,28 @@ fn_deploy() {
     echo ""
     read -rp "  Jalankan Nginx sekarang? (y/N): " _run_nginx
     if [[ "${_run_nginx,,}" == "y" ]]; then
-      mkdir -p "$CERTS_DIR"
-      if ! _ssl_cert_exists; then
-        warn "SSL cert belum ada — membuat self-signed otomatis untuk memulai Nginx..."
-        _ssl_self_signed_auto
-        warn "Jalankan menu 'Konfigurasi SSL' untuk mengganti dengan sertifikat asli."
+      echo ""
+      echo -e "  ${W}Apakah server ini berada di belakang WAF atau reverse proxy eksternal?${NC}"
+      echo -e "  ${DIM}(FortiWeb, F5, Nginx eksternal, load balancer instansi, dll.)${NC}"
+      echo -e "  ${DIM}Jika YA : SSL dihandle WAF, Nginx cukup HTTP — tidak butuh sertifikat.${NC}"
+      echo -e "  ${DIM}Jika TIDAK: Nginx handle SSL sendiri — butuh sertifikat (self-signed/BSrE/Let's Encrypt).${NC}"
+      read -rp "  Pakai WAF/reverse proxy? (y/N): " _use_waf
+      if [[ "${_use_waf,,}" == "y" ]]; then
+        info "Mode WAF — Nginx dikonfigurasi HTTP-only..."
+        _waf_update_http_conf
+        if [[ -f "config/nginx/conf.d/geomdb-ssl.conf" ]]; then
+          mv "config/nginx/conf.d/geomdb-ssl.conf" \
+             "config/nginx/conf.d/geomdb-ssl.conf.disabled"
+          ok "SSL config dinonaktifkan (tidak diperlukan di mode WAF)."
+        fi
+        ok "Pastikan WAF/proxy meneruskan traffic ke port 80 server ini."
+      else
+        mkdir -p "$CERTS_DIR"
+        if ! _ssl_cert_exists; then
+          warn "SSL cert belum ada — membuat self-signed otomatis untuk memulai Nginx..."
+          _ssl_self_signed_auto
+          warn "Jalankan menu 'Konfigurasi SSL' untuk mengganti dengan sertifikat asli."
+        fi
       fi
       if docker compose ps nginx 2>/dev/null | grep -q "running"; then
         docker compose exec nginx nginx -t && \
@@ -1317,28 +1334,32 @@ _waf_reencrypt() {
 _waf_update_http_conf() {
   # Update geomdb.conf.template agar tidak redirect ke HTTPS (karena WAF sudah handle)
   local conf="config/nginx/conf.d/geomdb.conf.template"
-  if grep -q "return 301 https" "$conf" 2>/dev/null; then
-    # Ganti redirect dengan proxy langsung
-    cat > "$conf" << 'NGINXCONF'
-# ─── Upstream ─────────────────────────────────────────────────────────────────
+  if grep -q "Mode WAF" "$conf" 2>/dev/null; then
+    ok "Nginx sudah dalam mode WAF — template tidak diubah."
+    return
+  fi
+  cat > "$conf" << 'NGINXCONF'
+# ─── Upstream — container Next.js ────────────────────────────────────────────
 upstream nextjs {
-    server host.docker.internal:3000;
+    server app:${PORT_APP};
     keepalive 16;
 }
 
 # ─── HTTP — Mode WAF SSL Termination ──────────────────────────────────────────
-# SSL dihandle oleh WAF. Nginx terima HTTP dari WAF.
+# SSL dihandle WAF/reverse proxy eksternal. Nginx terima HTTP dari WAF.
+# X-Forwarded-Proto di-hardcode "https" karena WAF selalu terminate HTTPS.
 server {
-    listen 80;
+    listen 80 default_server;
     server_name _;
+
+    # Let's Encrypt webroot challenge (tidak aktif di mode WAF, tidak mengganggu)
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
 
     client_max_body_size 100m;
 
-    add_header X-Frame-Options         SAMEORIGIN        always;
-    add_header X-Content-Type-Options  nosniff           always;
-    add_header X-XSS-Protection        "1; mode=block"   always;
-    add_header Referrer-Policy         strict-origin-when-cross-origin always;
-
+    # ─── CSW endpoint ──────────────────────────────────────────────────────────
     location /csw {
         limit_req zone=csw burst=30 nodelay;
         proxy_pass         http://nextjs;
@@ -1346,22 +1367,70 @@ server {
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header   X-Forwarded-Proto https;
         proxy_read_timeout      120s;
+        proxy_send_timeout      60s;
         proxy_buffer_size       256k;
         proxy_buffers           8 256k;
         proxy_busy_buffers_size 512k;
     }
 
+    # ─── Public API — cacheable oleh browser & CDN ───────────────────────────
+    location ~* ^/(api/public/|api/standar/|api/dokumentasi/) {
+        limit_req zone=api burst=80 nodelay;
+        proxy_pass         http://nextjs;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto https;
+        add_header Cache-Control "public, max-age=60, stale-while-revalidate=300" always;
+        proxy_read_timeout 30s;
+    }
+
+    # ─── Next.js static assets — cache 1 tahun ───────────────────────────────
+    location /_next/static/ {
+        proxy_pass         http://nextjs;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+    }
+
+    # ─── WhatsApp SSE — koneksi long-lived, jangan dibuffer ──────────────────
+    location ~ /api/admin/organisasi/wa/connect$ {
+        proxy_pass         http://nextjs;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto https;
+        proxy_buffering    off;
+        proxy_cache        off;
+        proxy_read_timeout 200s;
+        proxy_send_timeout 200s;
+    }
+
+    # ─── Admin sync (timeout panjang untuk dataset besar) ─────────────────────
     location /api/admin/csw/sync {
         proxy_pass         http://nextjs;
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header   X-Forwarded-Proto https;
         proxy_read_timeout 600s;
         proxy_send_timeout 600s;
+    }
+
+    # ─── Login & OTP — brute force protection ────────────────────────────────
+    location /api/auth/otp/ {
+        limit_req zone=auth burst=5 nodelay;
+        proxy_pass         http://nextjs;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto https;
     }
 
     location /api/auth/login {
@@ -1371,9 +1440,21 @@ server {
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header   X-Forwarded-Proto https;
     }
 
+    # ─── Dokumen PDF ──────────────────────────────────────────────────────────
+    location ~ ^/api/metadata/[^/]+/(qcqe/pdf|pemeriksa/spd)$ {
+        proxy_pass         http://nextjs;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto https;
+        proxy_read_timeout 30s;
+    }
+
+    # ─── API umum ─────────────────────────────────────────────────────────────
     location /api/ {
         limit_req zone=api burst=80 nodelay;
         proxy_pass         http://nextjs;
@@ -1381,11 +1462,24 @@ server {
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header   X-Forwarded-Proto https;
         proxy_read_timeout 30s;
     }
 
+    # ─── Block script/exploit probing ─────────────────────────────────────────
+    location ~* \.(php|php5|php7|phtml|asp|aspx|cgi|sh|py|pl|rb|jsp|cfm)$ {
+        return 444;
+    }
+    location ~* ^/(wp-login|wp-admin|wp-includes|xmlrpc|phpmyadmin|pma|myadmin|mysqladmin|adminer|shell|backdoor|eval|base64|webshell|c99|r57|alfa) {
+        return 444;
+    }
+    location ~* /(\.git|\.env|\.htaccess|\.htpasswd|web\.config|composer\.(json|lock)|package\.json|yarn\.lock) {
+        return 444;
+    }
+
+    # ─── Next.js app ──────────────────────────────────────────────────────────
     location / {
+        if ($http_next_action) { return 400; }
         proxy_pass         http://nextjs;
         proxy_http_version 1.1;
         proxy_set_header   Upgrade           $http_upgrade;
@@ -1393,14 +1487,13 @@ server {
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header   X-Forwarded-Proto https;
         proxy_cache_bypass $http_upgrade;
         proxy_read_timeout 30s;
     }
 }
 NGINXCONF
-    ok "geomdb.conf diupdate ke mode WAF (HTTP-only, proxy langsung)."
-  fi
+  ok "geomdb.conf.template diupdate ke mode WAF (HTTP-only)."
 }
 
 _waf_set_ips() {
@@ -2062,6 +2155,7 @@ def generate(cfg):
     jb=cfg.get("SEED_ADMIN_JABATAN","").strip() or "System Administrator"
     tel=cfg.get("SEED_ADMIN_TELEPON","").strip()
     gnet=cfg.get("GEOPORTAL_NETWORK","").strip()
+    arcgis_probe_domains=cfg.get("ARCGIS_PROBE_DOMAINS","go.id").strip() or "go.id"
     mu=cfg.get("MINIO_USER","").strip() or "geomdb_minio"
     sn=cfg.get("GEOMDB_SUBNET","").strip() or "172.28.0.0/24"
     wa=yn(cfg.get("_WA_ENABLED"),False); wa_s="true" if wa else "false"
@@ -2209,6 +2303,12 @@ GEOPORTAL_NETWORK={gnet}
 EXT_SERV_URL="http://localhost:{p_ext}"
 EXT_SERV_API_KEY="{sk}"
 # Di Docker: EXT_SERV_URL di-override ke http://ext-serv:3007
+
+# ─── ArcGIS probe allowlist ───────────────────────────────────
+# Domain yang diizinkan untuk probe ketersediaan service ArcGIS (publik, tanpa login).
+# Pisahkan dengan koma. Subdomain otomatis diizinkan (go.id → *.go.id).
+# Kosongkan untuk memblokir semua probe dari publik.
+ARCGIS_PROBE_DOMAINS={arcgis_probe_domains}
 
 # ─── Health check (monitoring) ───────────────────────────────
 # Dipakai oleh tools monitoring (Uptime Kuma, Prometheus, dll.)
@@ -2663,6 +2763,15 @@ GEOMDB_PY_EOF
   read -rp "  Aktifkan fitur WhatsApp OTP? (y/N): " _v
   [[ "${_v,,}" == "y" ]] && wa_enabled="true"
 
+  # ── ArcGIS probe allowlist ────────────────────────────────────────────────
+  echo ""
+  echo -e "  ${W}Domain ArcGIS yang boleh diprobe tanpa login (publik):${NC}"
+  echo -e "  ${DIM}Pengguna publik dapat memeriksa ketersediaan service ArcGIS dari domain ini.${NC}"
+  echo -e "  ${DIM}Pisahkan dengan koma. Subdomain otomatis diizinkan (go.id → *.go.id).${NC}"
+  echo -e "  ${DIM}Kosongkan untuk memblokir semua probe dari publik.${NC}"
+  read -rp "  Domain ArcGIS [go.id]: " _v
+  local ARCGIS_PROBE_DOMAINS="${_v:-go.id}"
+
   # ── CSW / Identitas Layanan Metadata ─────────────────────────────────────
   echo -e "\n  ${W}┌─ Identitas Layanan CSW ──────────────────────────────────────┐${NC}"
   echo -e "  ${DIM}Nilai ini muncul di respons GetCapabilities CSW (built-in & pycsw).${NC}"
@@ -2935,6 +3044,12 @@ GEOPORTAL_NETWORK=${GEOPORTAL_NETWORK}
 EXT_SERV_URL="http://localhost:${P_EXT}"
 EXT_SERV_API_KEY="${SHARED_KEY}"
 # Di Docker: EXT_SERV_URL di-override ke http://ext-serv:3007
+
+# ─── ArcGIS probe allowlist ───────────────────────────────────
+# Domain yang diizinkan untuk probe ketersediaan service ArcGIS (publik, tanpa login).
+# Pisahkan dengan koma. Subdomain otomatis diizinkan (go.id → *.go.id).
+# Kosongkan untuk memblokir semua probe dari publik.
+ARCGIS_PROBE_DOMAINS=${ARCGIS_PROBE_DOMAINS}
 
 # ─── Health check (monitoring) ───────────────────────────────
 # Dipakai oleh tools monitoring (Uptime Kuma, Prometheus, dll.)
