@@ -299,9 +299,10 @@ _apply_install_method() {
       ;;
     tarball)
       local tarfiles=()
-      # Hanya cocokkan Docker image bundle: *-standalone.tar.gz / *-geoportal.tar.gz
+      # Cocokkan Docker image bundle: *-standalone.tar.gz / *-geoportal.tar.gz / *-<kustom>.tar.gz
       # Jangan tangkap *-installer.tar.gz (installer package) atau *-infra.tar.gz
-      mapfile -t tarfiles < <(ls geomdb-hub-*-standalone.tar.gz geomdb-hub-*-geoportal.tar.gz 2>/dev/null || true)
+      mapfile -t tarfiles < <(ls geomdb-hub-*.tar.gz 2>/dev/null \
+        | grep -v '\-installer\.tar\.gz$' | grep -v '\-infra\.tar\.gz$' | sort -u || true)
       if [[ ${#tarfiles[@]} -eq 0 ]]; then
         # Cek apakah ada *-installer.tar.gz yang mengandung inner bundle
         local installer_tars=()
@@ -365,17 +366,28 @@ _apply_install_method() {
           _tag="${_tsel:-$_tag}"
         fi
         [[ -z "$_tag" ]] && { err "Tag rilis kosong."; return 1; }
-        # Varian: geoportal (sub-path /geomdb-hub) atau standalone (root)
+        # Varian: geoportal / standalone / sub-direktori kustom
         local _variant
         echo -e "  ${W}Pilih varian instalasi:${NC}"
         echo "  1) geoportal  — diakses di sub-path /geomdb-hub"
         echo "  2) standalone — diakses di root / (server dedicated)"
+        echo "  3) kustom     — sub-direktori lain (mis. /metadata)"
+        echo -e "     ${DIM}Varian kustom harus sudah dibuat via 'Release custom basePath installer' di GitHub Actions.${NC}"
         while true; do
-          read -rp "  Pilih [1]: " _v
-          case "${_v:-1}" in
+          read -rp "  Pilih [2]: " _v
+          case "${_v:-2}" in
             1) _variant="geoportal"; break ;;
             2) _variant="standalone"; break ;;
-            *) echo -e "  ${R}✗${NC} Masukkan 1 atau 2." ;;
+            3)
+              local _custom_tag
+              while true; do
+                read -rp "  Masukkan nama varian kustom (contoh: metadata): " _custom_tag
+                [[ "$_custom_tag" =~ ^[a-z0-9][a-z0-9_-]*$ ]] && break
+                echo -e "  ${R}✗${NC} Nama varian hanya huruf kecil, angka, '-', '_'."
+              done
+              _variant="$_custom_tag"
+              break ;;
+            *) echo -e "  ${R}✗${NC} Masukkan 1, 2, atau 3." ;;
           esac
         done
         local _asset="geomdb-hub-${_tag}-${_variant}-installer.tar.gz"
@@ -417,7 +429,7 @@ _apply_install_method() {
         cp "$_img" .
         rm -f "$_asset"; rm -rf "geomdb-hub-${_tag}"
         ok "Image bundle siap: $(basename "$_img")"
-        mapfile -t tarfiles < <(ls geomdb-hub-*-standalone.tar.gz geomdb-hub-*-geoportal.tar.gz 2>/dev/null || true)
+        mapfile -t tarfiles < <(ls geomdb-hub-*-standalone.tar.gz geomdb-hub-*-geoportal.tar.gz "geomdb-hub-${_tag}-${_variant}.tar.gz" 2>/dev/null | sort -u || true)
         [[ ${#tarfiles[@]} -eq 0 ]] && { err "Image bundle tidak ditemukan setelah unduh."; return 1; }
       fi
       local tarfile="${tarfiles[0]}"
