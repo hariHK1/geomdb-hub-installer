@@ -1952,16 +1952,30 @@ fn_generate_env() {
       echo ""
 
       # ── 1. Posisi aplikasi (menentukan BASE_PATH) ─────────────────────────
-      echo -e "  ${W}Apakah server ini sudah memiliki geoportal?${NC}"
-      echo -e "  ${DIM}(GeoNode, ArcGIS Portal, atau platform geoportal lainnya)${NC}"
+      echo -e "  ${W}Posisi aplikasi di URL:${NC}"
       echo ""
-      echo "  1) Ya, sudah punya geoportal"
+      echo "  1) Server sudah punya geoportal"
       echo -e "     ${DIM}→ Aplikasi diakses di sub-path: /geomdb-hub${NC}"
-      echo "  2) Tidak — server dedicated untuk aplikasi ini saja"
-      echo -e "     ${DIM}→ Aplikasi diakses di root /  (URL langsung)${NC}"
+      echo "  2) Server dedicated — aplikasi saja"
+      echo -e "     ${DIM}→ Aplikasi diakses di root / (URL langsung)${NC}"
+      echo "  3) Sub-direktori kustom"
+      echo -e "     ${DIM}→ Sub-path tertentu, mis. /metadata (image harus sudah di-build via GitHub Actions)${NC}"
       echo ""
       read -rp "  Pilih [2]: " _v
       local _xl_geoportal="${_v:-2}"
+      local _xl_custom_path="" _xl_custom_img=""
+      if [[ "$_xl_geoportal" == "3" ]]; then
+        while true; do
+          read -rp "  Masukkan sub-path (awali dengan /, contoh: /metadata): " _bp
+          if [[ "$_bp" =~ ^/[a-zA-Z0-9_/-]+$ ]]; then
+            _xl_custom_path="$_bp"; break
+          fi
+          echo -e "  ${R}✗${NC} Sub-path harus diawali '/' dan hanya mengandung huruf, angka, '-', '_', '/'."
+        done
+        local _slug="${_xl_custom_path#/}"; _slug="${_slug//\//-}"
+        _xl_custom_img="ghcr.io/harihk1/geomdb-hub-installer/app-${_slug}"
+        warn "Pastikan image '${_xl_custom_img}' sudah di-build via 'Build custom basePath image' di GitHub Actions."
+      fi
 
       # ── 2. Nginx ──────────────────────────────────────────────────────────
       echo ""
@@ -2138,8 +2152,15 @@ def port(v, d):
 def generate(cfg):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     app_url = cfg["APP_URL"].rstrip("/")
-    base_path = "/geomdb-hub" if cfg.get("_GEOPORTAL","2").strip()=="1" else ""
+    geo = cfg.get("_GEOPORTAL","2").strip()
+    if geo == "1":
+        base_path = "/geomdb-hub"
+    elif geo == "3":
+        base_path = cfg.get("_CUSTOM_PATH","").strip()
+    else:
+        base_path = ""
     full_url  = app_url + base_path
+    custom_img = cfg.get("_CUSTOM_APP_IMAGE","").strip()
     use_nginx = yn(cfg.get("_USE_NGINX"), True)
     ext_nginx = yn(cfg.get("_EXT_NGINX"), False)
     un_s = "true" if use_nginx else "false"
@@ -2186,6 +2207,7 @@ def generate(cfg):
          f"PORT_PYCSW={p_pycsw}",f"PORT_EXT_SERV={p_ext}"]
     pb="\n".join(pl)
     bpl=f"NEXT_PUBLIC_BASE_PATH={base_path}" if base_path else ""
+    custom_img_line=f"GEOMDB_APP_IMAGE={custom_img}" if custom_img else ""
     tl=f"SEED_ADMIN_TELEPON={tel}" if tel else ""
     main_env=f"""# ════════════════════════════════════════════════════════════
 #  Geomdb Hub — Environment Configuration
@@ -2227,6 +2249,7 @@ APP_URL="{full_url}"
 # Kunci enkripsi Server Actions Next.js — HARUS STABIL antar-build.
 NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="{sa}"
 {bpl}
+{custom_img_line}
 WA_ENABLED={wa_s}
 NEXT_PUBLIC_WA_ENABLED={wa_s}
 NODE_ENV="production"
@@ -2387,7 +2410,9 @@ MAIL_TIMEOUT=10000
 def preview(cfg):
     geo=cfg.get("_GEOPORTAL","2").strip()
     app_url=cfg.get("APP_URL","").rstrip("/")
-    base_path="/geomdb-hub" if geo=="1" else ""
+    if geo=="1": base_path="/geomdb-hub"
+    elif geo=="3": base_path=cfg.get("_CUSTOM_PATH","").strip()
+    else: base_path=""
     full_url=app_url+base_path
     use_ng=yn(cfg.get("_USE_NGINX"),True); ext_ng=yn(cfg.get("_EXT_NGINX"),False)
     wa_en=yn(cfg.get("_WA_ENABLED"),False)
@@ -2454,11 +2479,15 @@ un =sys.argv[3] if len(sys.argv)>3 else "true"
 en =sys.argv[4] if len(sys.argv)>4 else "false"
 wa =sys.argv[5] if len(sys.argv)>5 else "false"
 gnet_arg=sys.argv[6] if len(sys.argv)>6 else None
+custom_path_arg=sys.argv[7] if len(sys.argv)>7 else None
+custom_img_arg=sys.argv[8] if len(sys.argv)>8 else None
 print(); info(f"Membaca konfigurasi dari: {xlsx}")
 cfg=load_excel(xlsx)
 cfg["_GEOPORTAL"]=geo; cfg["_USE_NGINX"]=un; cfg["_EXT_NGINX"]=en; cfg["_WA_ENABLED"]=wa
 # GEOPORTAL_NETWORK diambil dari terminal (argv[6]), bukan Excel — agar bisa deteksi network live
 if gnet_arg is not None: cfg["GEOPORTAL_NETWORK"]=gnet_arg
+if custom_path_arg: cfg["_CUSTOM_PATH"]=custom_path_arg
+if custom_img_arg:  cfg["_CUSTOM_APP_IMAGE"]=custom_img_arg
 errs=validate(cfg)
 if errs:
     print(); print(f"  {R}✗  Konfigurasi Excel belum lengkap:{NC}")
@@ -2468,7 +2497,7 @@ if errs:
 preview(cfg)
 generate(cfg)
 GEOMDB_PY_EOF
-      python3 "$_py_tmp" "$_excel_file" "$_xl_geoportal" "$_xl_use_nginx" "$_xl_ext_nginx" "$_xl_wa" "$_xl_gnet"
+      python3 "$_py_tmp" "$_excel_file" "$_xl_geoportal" "$_xl_use_nginx" "$_xl_ext_nginx" "$_xl_wa" "$_xl_gnet" "$_xl_custom_path" "$_xl_custom_img"
       _py_rc=$?
       rm -f "$_py_tmp"
       if [[ $_py_rc -eq 0 ]]; then
@@ -2515,17 +2544,35 @@ GEOMDB_PY_EOF
   local _v  # variabel temp untuk semua read berikutnya
 
   echo ""
-  echo -e "  ${W}Apakah server ini sudah memiliki geoportal?${NC}"
-  echo -e "  ${DIM}(GeoNode, ArcGIS Portal, atau platform geoportal lainnya)${NC}"
+  echo -e "  ${W}Posisi aplikasi di URL:${NC}"
   echo ""
-  echo "  1) Ya, sudah punya geoportal"
+  echo "  1) Server sudah punya geoportal"
   echo -e "     ${DIM}→ Aplikasi diakses di: ${APP_URL}/geomdb-hub${NC}"
-  echo "  2) Tidak — server dedicated untuk aplikasi ini saja"
+  echo "  2) Server dedicated — aplikasi saja"
   echo -e "     ${DIM}→ Aplikasi diakses di: ${APP_URL} (root /)${NC}"
+  echo "  3) Sub-direktori kustom"
+  echo -e "     ${DIM}→ Aplikasi diakses di sub-path tertentu (mis. /metadata)${NC}"
+  echo -e "     ${DIM}  Syarat: image custom sudah di-build via GitHub Actions terlebih dahulu.${NC}"
   echo ""
-  read -rp "  Pilih [1]: " _v
-  local BASE_PATH=""
-  [[ "${_v:-1}" == "1" ]] && BASE_PATH="/geomdb-hub"
+  read -rp "  Pilih [2]: " _v
+  local BASE_PATH="" CUSTOM_APP_IMAGE=""
+  case "${_v:-2}" in
+    1) BASE_PATH="/geomdb-hub" ;;
+    3)
+      while true; do
+        read -rp "  Masukkan sub-path (awali dengan /, contoh: /metadata): " _bp
+        if [[ "$_bp" =~ ^/[a-zA-Z0-9_/-]+$ ]]; then
+          BASE_PATH="$_bp"
+          break
+        fi
+        echo -e "  ${R}✗${NC} Sub-path harus diawali '/' dan hanya mengandung huruf, angka, '-', '_', '/'."
+      done
+      local _img_slug="${BASE_PATH#/}"
+      _img_slug="${_img_slug//\//-}"
+      CUSTOM_APP_IMAGE="ghcr.io/harihk1/geomdb-hub-installer/app-${_img_slug}"
+      warn "Pastikan image '${CUSTOM_APP_IMAGE}' sudah di-build via workflow 'Build custom basePath image' di GitHub Actions."
+      ;;
+  esac
   # URL lengkap = origin + sub-path (dipakai sebagai NEXT_PUBLIC_APP_URL)
   local FULL_APP_URL="${APP_URL}${BASE_PATH}"
 
@@ -2961,7 +3008,9 @@ ENCRYPTION_KEY="${ENC_KEY}"
 
 # ─── Aplikasi ────────────────────────────────────────────────
 NEXT_PUBLIC_APP_URL="${FULL_APP_URL}"
+APP_URL="${FULL_APP_URL}"
 $(  [[ -n "${BASE_PATH}" ]] && echo "NEXT_PUBLIC_BASE_PATH=${BASE_PATH}" )
+$(  [[ -n "${CUSTOM_APP_IMAGE}" ]] && echo "GEOMDB_APP_IMAGE=${CUSTOM_APP_IMAGE}" )
 WA_ENABLED=${wa_enabled}
 NEXT_PUBLIC_WA_ENABLED=${wa_enabled}
 NODE_ENV="production"
