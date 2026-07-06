@@ -525,16 +525,16 @@ bash deploy.sh
 
 Wizard akan menanyakan secara bertahap:
 
-| Pertanyaan                   | Contoh Jawaban                                |
-| ---------------------------- | --------------------------------------------- |
-| Domain aplikasi              | `metadata.example.id`                         |
-| Base path (kosong jika root) | `/geomdb-hub` atau kosong                     |
-| URL CSW publik               | `https://metadata.example.id/csw`             |
-| Port-port layanan            | Enter untuk default semua                     |
-| Subnet Docker                | auto-detect, atau isi manual                  |
-| Network GeoNode              | `geonode_default` atau kosong jika standalone |
-| Cara install image           | build lokal / pull dari registry CI           |
-| Variabel rahasia             | JWT_SECRET, APP_SECRET, password, dll.        |
+| Pertanyaan                   | Contoh Jawaban                                              |
+| ---------------------------- | ----------------------------------------------------------- |
+| Domain aplikasi              | `metadata.example.id`                                       |
+| Posisi aplikasi              | `1` Geoportal / `2` Standalone / `3` Sub-direktori kustom  |
+| URL CSW publik               | `https://metadata.example.id/csw`                          |
+| Port-port layanan            | Enter untuk default semua                                   |
+| Subnet Docker                | auto-detect, atau isi manual                                |
+| Network GeoNode              | `geonode_default` atau kosong jika standalone               |
+| Cara install image           | build lokal / pull dari registry CI                         |
+| Variabel rahasia             | JWT_SECRET, APP_SECRET, password, dll.                      |
 
 Setelah wizard selesai, file `.env` otomatis terbuat. Wizard juga menangani `docker login` ke registry GitLab jika Anda memilih opsi pull dari CI.
 
@@ -621,6 +621,78 @@ docker compose up -d
 
 > Image sudah dibangun otomatis oleh GitLab CI setiap push ke `main` / `development`.
 > Lihat seksi [GitLab CI Pipeline](#gitlab-ci-pipeline-opsional) untuk setup awal.
+
+### Instalasi di Sub-Direktori Kustom
+
+Gunakan opsi ini jika domain sudah terpakai dan aplikasi harus berjalan di sub-path tertentu — misalnya `https://data.bantenprov.go.id/metadata` alih-alih di root.
+
+> **Mengapa perlu image terpisah?** Next.js mem-*bake* `basePath` saat build-time. Nilai ini tidak bisa diubah tanpa rebuild — karena itu setiap basePath yang unik membutuhkan image Docker tersendiri.
+
+**Langkah 1 — Build image kustom (GitHub Actions)**
+
+Di repo `geomdb-hub`, jalankan manual workflow **Actions → Build custom basePath image**:
+
+| Input | Contoh |
+| ----- | ------ |
+| `base_path` | `/metadata` |
+| `image_tag` | `metadata` |
+
+Setelah ~5 menit, image tersedia di GHCR:
+
+```
+ghcr.io/harihk1/geomdb-hub-installer/app-metadata:latest
+```
+
+**Langkah 2 — Set package ke Public**
+
+Package GHCR baru default *private*. Buka GitHub → Packages → `geomdb-hub-installer/app-{slug}` → Package settings → **Change visibility → Public**, agar instansi bisa pull tanpa token.
+
+**Langkah 3 (opsional) — Buat installer tarball**
+
+Untuk instansi yang menginstal via tarball offline, jalankan **Actions → Release custom basePath installer**:
+
+| Input | Contoh |
+| ----- | ------ |
+| `image_tag` | `metadata` |
+| `release_tag` | `v1.0.1` |
+
+File `geomdb-hub-v1.0.1-metadata-installer.tar.gz` otomatis diupload ke GitHub Release di repo `geomdb-hub-installer`.
+
+**Install baru via deploy.sh**
+
+Pilih opsi **3) Sub-direktori kustom** saat wizard menanyakan posisi aplikasi, lalu isi sub-path (mis. `/metadata`). Wizard mengisi `GEOMDB_APP_IMAGE` secara otomatis.
+
+**Update instansi yang sudah berjalan**
+
+Tambahkan ke `.env` di server instansi:
+
+```
+GEOMDB_APP_IMAGE=ghcr.io/harihk1/geomdb-hub-installer/app-metadata
+NEXT_PUBLIC_BASE_PATH=/metadata
+APP_URL=https://data.bantenprov.go.id/metadata
+NEXT_PUBLIC_APP_URL=https://data.bantenprov.go.id/metadata
+```
+
+Lalu pull dan restart container app:
+
+```bash
+docker compose pull app
+docker compose up -d app
+```
+
+**Konfigurasi nginx (jika server punya nginx eksternal di depan Docker)**
+
+```nginx
+location /metadata/ {
+    proxy_pass http://localhost:3000/metadata/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+> **Penting:** Jangan strip prefix — `proxy_pass` harus menyertakan `/metadata/` di akhir (bukan hanya `http://localhost:3000/`). Next.js mengharapkan path lengkap termasuk basePath.
 
 ---
 
