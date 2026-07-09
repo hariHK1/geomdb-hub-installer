@@ -403,22 +403,13 @@ _apply_install_method() {
           echo -e "  ${W}Pilih varian instalasi:${NC}"
           echo "  1) geoportal  — diakses di sub-path /geomdb-hub"
           echo "  2) standalone — diakses di root / (server dedicated)"
-          echo "  3) kustom     — sub-direktori lain (mis. /metadata)"
-          echo -e "     ${DIM}Varian kustom harus sudah dibuat via 'Release custom basePath installer' di GitHub Actions.${NC}"
+          echo "  3) metadata   — diakses di sub-path /metadata"
           while true; do
             read -rp "  Pilih [2]: " _v
             case "${_v:-2}" in
               1) _variant="geoportal"; break ;;
               2) _variant="standalone"; break ;;
-              3)
-                local _custom_tag
-                while true; do
-                  read -rp "  Masukkan nama varian kustom (contoh: metadata): " _custom_tag
-                  [[ "$_custom_tag" =~ ^[a-z0-9][a-z0-9_-]*$ ]] && break
-                  echo -e "  ${R}✗${NC} Nama varian hanya huruf kecil, angka, '-', '_'."
-                done
-                _variant="$_custom_tag"
-                break ;;
+              3) _variant="metadata"; break ;;
               *) echo -e "  ${R}✗${NC} Masukkan 1, 2, atau 3." ;;
             esac
           done
