@@ -5,6 +5,11 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
+# ─── Variant installer (diisi CI saat build, kosong = generik) ───────────────
+# Contoh: GEOMDB_INSTALLER_VARIANT="metadata"  → NEXT_PUBLIC_BASE_PATH sudah
+# terbaked di image; installer tidak perlu tanya varian ke user.
+GEOMDB_INSTALLER_VARIANT=""
+
 # ─── Warna ────────────────────────────────────────────────────────────────────
 R='\033[0;31m' G='\033[0;32m' Y='\033[0;33m'
 B='\033[0;34m' C='\033[0;36m' W='\033[1;37m'
@@ -260,6 +265,26 @@ _ensure_infra_images() {
   return 1
 }
 
+# Setelah docker load tarball: retag image lokal (geomdb-app:latest dll.) ke nama
+# registry yang tersimpan di .env. Tanpa ini docker compose akan terus pakai cache
+# registry lama dan container tidak direcreate meski image baru sudah dimuat.
+_retag_tarball_to_env() {
+  local ef=".env.$(get_env)"; [[ -f "$ef" ]] || ef=".env"
+  [[ -f "$ef" ]] || return 0
+  local pairs=(
+    "GEOMDB_APP_IMAGE=geomdb-app:latest"
+    "GEOMDB_MIGRATE_IMAGE=geomdb-migrate:latest"
+    "GEOMDB_EXT_SERV_IMAGE=geomdb-ext-serv:latest"
+  )
+  for pair in "${pairs[@]}"; do
+    local key="${pair%%=*}" src="${pair#*=}"
+    local dst; dst=$(grep -E "^${key}=" "$ef" 2>/dev/null | head -1 | cut -d= -f2-)
+    [[ -z "$dst" || "$dst" == geomdb-* ]] && continue
+    dst="${dst%%:*}:latest"
+    docker tag "$src" "$dst" 2>/dev/null && info "Retag ${src} → ${dst}" || true
+  done
+}
+
 # Load/pull image dari CI sesuai INSTALL_METHOD (dipanggil sebelum start container)
 _apply_install_method() {
   case "${INSTALL_METHOD:-local}" in
@@ -271,7 +296,10 @@ _apply_install_method() {
       # Kalau GEOPORTAL_NETWORK diset (server punya geoportal), pakai app-geoportal
       # yang sudah baked-in NEXT_PUBLIC_BASE_PATH=/geomdb-hub
       local _default_app_img
-      if [[ -n "${GEOPORTAL_NETWORK:-}" ]]; then
+      if [[ -n "${GEOMDB_INSTALLER_VARIANT:-}" ]]; then
+        _default_app_img="${_reg_base}/app-${GEOMDB_INSTALLER_VARIANT}"
+        info "Varian hardcoded: ${GEOMDB_INSTALLER_VARIANT} → pakai image app-${GEOMDB_INSTALLER_VARIANT}"
+      elif [[ -n "${GEOPORTAL_NETWORK:-}" ]]; then
         _default_app_img="${_reg_base}/app-geoportal"
         info "Terdeteksi geoportal (GEOPORTAL_NETWORK=${GEOPORTAL_NETWORK}) → pakai image app-geoportal"
       else
@@ -368,28 +396,33 @@ _apply_install_method() {
         [[ -z "$_tag" ]] && { err "Tag rilis kosong."; return 1; }
         # Varian: geoportal / standalone / sub-direktori kustom
         local _variant
-        echo -e "  ${W}Pilih varian instalasi:${NC}"
-        echo "  1) geoportal  — diakses di sub-path /geomdb-hub"
-        echo "  2) standalone — diakses di root / (server dedicated)"
-        echo "  3) kustom     — sub-direktori lain (mis. /metadata)"
-        echo -e "     ${DIM}Varian kustom harus sudah dibuat via 'Release custom basePath installer' di GitHub Actions.${NC}"
-        while true; do
-          read -rp "  Pilih [2]: " _v
-          case "${_v:-2}" in
-            1) _variant="geoportal"; break ;;
-            2) _variant="standalone"; break ;;
-            3)
-              local _custom_tag
-              while true; do
-                read -rp "  Masukkan nama varian kustom (contoh: metadata): " _custom_tag
-                [[ "$_custom_tag" =~ ^[a-z0-9][a-z0-9_-]*$ ]] && break
-                echo -e "  ${R}✗${NC} Nama varian hanya huruf kecil, angka, '-', '_'."
-              done
-              _variant="$_custom_tag"
-              break ;;
-            *) echo -e "  ${R}✗${NC} Masukkan 1, 2, atau 3." ;;
-          esac
-        done
+        if [[ -n "${GEOMDB_INSTALLER_VARIANT:-}" ]]; then
+          _variant="${GEOMDB_INSTALLER_VARIANT}"
+          info "Varian hardcoded: ${_variant}"
+        else
+          echo -e "  ${W}Pilih varian instalasi:${NC}"
+          echo "  1) geoportal  — diakses di sub-path /geomdb-hub"
+          echo "  2) standalone — diakses di root / (server dedicated)"
+          echo "  3) kustom     — sub-direktori lain (mis. /metadata)"
+          echo -e "     ${DIM}Varian kustom harus sudah dibuat via 'Release custom basePath installer' di GitHub Actions.${NC}"
+          while true; do
+            read -rp "  Pilih [2]: " _v
+            case "${_v:-2}" in
+              1) _variant="geoportal"; break ;;
+              2) _variant="standalone"; break ;;
+              3)
+                local _custom_tag
+                while true; do
+                  read -rp "  Masukkan nama varian kustom (contoh: metadata): " _custom_tag
+                  [[ "$_custom_tag" =~ ^[a-z0-9][a-z0-9_-]*$ ]] && break
+                  echo -e "  ${R}✗${NC} Nama varian hanya huruf kecil, angka, '-', '_'."
+                done
+                _variant="$_custom_tag"
+                break ;;
+              *) echo -e "  ${R}✗${NC} Masukkan 1, 2, atau 3." ;;
+            esac
+          done
+        fi
         local _asset="geomdb-hub-${_tag}-${_variant}-installer.tar.gz"
         info "Mengunduh ${_asset} (bisa beberapa menit)..."
         if [[ -n "$_ghtoken" ]]; then
@@ -446,6 +479,7 @@ _apply_install_method() {
       info "Memuat image dari ${tarfile} (bisa beberapa menit)..."
       docker load < "$tarfile"
       ok "Image berhasil dimuat dari ${tarfile}."
+      _retag_tarball_to_env
       ;;
   esac
 }
