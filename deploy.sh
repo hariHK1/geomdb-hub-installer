@@ -285,6 +285,60 @@ _retag_tarball_to_env() {
   done
 }
 
+# ─── Arrow-key selection menu ─────────────────────────────────────────────────
+# Usage: _arrow_select "Prompt" items_array_name
+# Result: indeks terpilih disimpan ke _ARROW_SEL (0-based)
+_ARROW_SEL=0
+_arrow_select() {
+  local _prompt="$1"
+  local -n __as_items=$2
+  _ARROW_SEL=0
+  local _as_n=${#__as_items[@]}
+  [[ $_as_n -eq 0 ]] && return
+
+  echo -e "  ${W}${_prompt}${NC}"
+  echo -e "  ${DIM}↑↓ navigasi · Enter pilih${NC}"
+  echo ""
+
+  local _ai
+  for _ai in "${!__as_items[@]}"; do
+    if [[ $_ai -eq 0 ]]; then
+      echo -e "  \e[7m ${__as_items[$_ai]} \e[0m"
+    else
+      echo -e "    ${__as_items[$_ai]}"
+    fi
+  done
+
+  tput civis 2>/dev/null
+  while true; do
+    local _ak _ak2 _ak3
+    IFS= read -rsn1 _ak
+    if [[ $_ak == $'\x1b' ]]; then
+      IFS= read -rsn1 -t 0.1 _ak2 || true
+      IFS= read -rsn1 -t 0.1 _ak3 || true
+      if [[ ${_ak2:-} == '[' ]]; then
+        case "${_ak3:-}" in
+          A) (( _ARROW_SEL > 0 )) && (( _ARROW_SEL-- )) || true ;;
+          B) (( _ARROW_SEL < _as_n - 1 )) && (( _ARROW_SEL++ )) || true ;;
+        esac
+      fi
+    elif [[ $_ak == '' || $_ak == $'\r' ]]; then
+      break
+    fi
+    tput cuu "$_as_n" 2>/dev/null
+    for _ai in "${!__as_items[@]}"; do
+      tput el 2>/dev/null
+      if [[ $_ai -eq $_ARROW_SEL ]]; then
+        echo -e "  \e[7m ${__as_items[$_ai]} \e[0m"
+      else
+        echo -e "    ${__as_items[$_ai]}"
+      fi
+    done
+  done
+  tput cnorm 2>/dev/null
+  echo ""
+}
+
 # Load/pull image dari CI sesuai INSTALL_METHOD (dipanggil sebelum start container)
 _apply_install_method() {
   case "${INSTALL_METHOD:-local}" in
@@ -326,75 +380,126 @@ _apply_install_method() {
       [[ -n "${REGISTRY_TOKEN:-}" ]] && docker logout "${_registry_host}" 2>/dev/null || true
       ;;
     tarball)
-      local tarfiles=()
-      # Cocokkan Docker image bundle: *-standalone.tar.gz / *-geoportal.tar.gz / *-<kustom>.tar.gz
-      # Jangan tangkap *-installer.tar.gz (installer package) atau *-infra.tar.gz
-      mapfile -t tarfiles < <(ls geomdb-hub-*.tar.gz 2>/dev/null \
-        | grep -v '\-installer\.tar\.gz$' | grep -v '\-infra\.tar\.gz$' | sort -u || true)
-      if [[ ${#tarfiles[@]} -eq 0 ]]; then
-        # Cek apakah ada *-installer.tar.gz yang mengandung inner bundle
-        local installer_tars=()
-        mapfile -t installer_tars < <(ls geomdb-hub-*-standalone-installer.tar.gz geomdb-hub-*-geoportal-installer.tar.gz 2>/dev/null || true)
-        if [[ ${#installer_tars[@]} -gt 0 ]]; then
-          local inst_tar="${installer_tars[0]}"
-          info "Ditemukan installer package: ${inst_tar} — mengekstrak Docker image bundle..."
+      # ── 1. Scan local Docker-image bundles ─────────────────────────────
+      local _local_files=()
+      mapfile -t _local_files < <(ls geomdb-hub-*.tar.gz 2>/dev/null \
+        | grep -v '\-installer\.tar\.gz$' | grep -v '\-infra\.tar\.gz$' \
+        | sort -Vr || true)
+
+      # Ekstrak inner bundle dari installer package bila belum ada bundle mentah
+      if [[ ${#_local_files[@]} -eq 0 ]]; then
+        local _inst_tars=()
+        mapfile -t _inst_tars < <(ls geomdb-hub-*-standalone-installer.tar.gz \
+          geomdb-hub-*-geoportal-installer.tar.gz 2>/dev/null || true)
+        if [[ ${#_inst_tars[@]} -gt 0 ]]; then
+          local _inst_tar="${_inst_tars[0]}"
+          info "Ditemukan installer package: ${_inst_tar} — mengekstrak Docker image bundle..."
           local _inner
-          _inner=$(tar -tzf "$inst_tar" 2>/dev/null | grep -E 'geomdb-hub-.*-(standalone|geoportal)\.tar\.gz$' | head -1)
-          if [[ -z "$_inner" ]]; then
-            err "Tidak dapat menemukan Docker image bundle di dalam ${inst_tar}."
-          else
-            tar -xzf "$inst_tar" --strip-components=1 "$_inner" 2>/dev/null \
-              || tar -xzf "$inst_tar" "$_inner" 2>/dev/null
+          _inner=$(tar -tzf "$_inst_tar" 2>/dev/null \
+            | grep -E 'geomdb-hub-.*-(standalone|geoportal)\.tar\.gz$' | head -1)
+          if [[ -n "$_inner" ]]; then
+            tar -xzf "$_inst_tar" --strip-components=1 "$_inner" 2>/dev/null \
+              || tar -xzf "$_inst_tar" "$_inner" 2>/dev/null
             local _extracted
             _extracted=$(basename "$_inner")
             if [[ -f "$_extracted" ]]; then
               ok "Bundle diekstrak: ${_extracted}"
-              mapfile -t tarfiles < <(ls geomdb-hub-*-standalone.tar.gz geomdb-hub-*-geoportal.tar.gz 2>/dev/null || true)
+              mapfile -t _local_files < <(ls geomdb-hub-*.tar.gz 2>/dev/null \
+                | grep -v '\-installer\.tar\.gz$' | grep -v '\-infra\.tar\.gz$' \
+                | sort -Vr || true)
             else
-              err "Gagal mengekstrak ${_inner} dari ${inst_tar}."
+              err "Gagal mengekstrak ${_inner} dari ${_inst_tar}."
             fi
           fi
         fi
       fi
-      if [[ ${#tarfiles[@]} -eq 0 ]]; then
-        warn "Tidak ada file Docker image bundle (geomdb-hub-*-standalone.tar.gz atau geomdb-hub-*-geoportal.tar.gz) di folder ini."
-        echo ""
-        # Default: repo PUBLIK geomdb-hub-installer → unduh anonim tanpa token.
-        # Override ke repo lain (mis. privat) via env GEOMDB_GH_REPO bila perlu.
-        local _ghrepo="${GEOMDB_GH_REPO:-hariHK1/geomdb-hub-installer}"
-        echo -e "  ${W}Unduh otomatis dari GitHub Releases?${NC}"
-        echo -e "  ${DIM}https://github.com/${_ghrepo}/releases${NC}"
-        read -rp "  Unduh sekarang? [Y/n]: " _dl
-        if [[ "${_dl,,}" =~ ^n ]]; then
-          err "Dibatalkan. Salin geomdb-hub-*.tar.gz ke folder ini, atau unduh manual dari Releases."
-          return 1
+
+      # ── 2. Bangun peta versi lokal: versi → "file1|file2|…" ───────────
+      declare -A _local_ver_map=()
+      local _lf
+      for _lf in "${_local_files[@]}"; do
+        local _fver
+        _fver=$(echo "$_lf" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        [[ -z "$_fver" ]] && continue
+        _local_ver_map[$_fver]+="${_lf}|"
+      done
+
+      # ── 3. Ambil daftar rilis dari GitHub (anonim, batas 8 detik) ──────
+      local _ghrepo="${GEOMDB_GH_REPO:-hariHK1/geomdb-hub-installer}"
+      local _gh_tags=()
+      echo -ne "  ${DIM}Mengambil daftar rilis GitHub...${NC} "
+      mapfile -t _gh_tags < <(curl -fsSL --max-time 8 \
+        "https://api.github.com/repos/${_ghrepo}/releases" 2>/dev/null \
+        | grep -oE '"tag_name":[[:space:]]*"[^"]+"' \
+        | sed -E 's/.*"([^"]+)"$/\1/' \
+        | head -30 || true)
+      if [[ ${#_gh_tags[@]} -gt 0 ]]; then
+        echo -e "${G}✓${NC}"
+      else
+        echo -e "${Y}gagal (offline / rate-limit)${NC}"
+      fi
+
+      # ── 4. Gabungkan: versi → sumber ("local"|"github"|"both") ─────────
+      declare -A _ver_source=()
+      for _v in "${!_local_ver_map[@]}"; do
+        _ver_source[$_v]="local"
+      done
+      local _t
+      for _t in "${_gh_tags[@]}"; do
+        if [[ -n "${_ver_source[$_t]:-}" ]]; then
+          _ver_source[$_t]="both"
+        else
+          _ver_source[$_t]="github"
         fi
-        # Rilis di repo publik → token TIDAK diperlukan. Hanya isi PAT bila Anda
-        # menunjuk repo privat via GEOMDB_GH_REPO (butuh scope repo / Contents:Read).
+      done
+
+      if [[ ${#_ver_source[@]} -eq 0 ]]; then
+        err "Tidak ada versi tersedia (lokal maupun GitHub). Salin geomdb-hub-*.tar.gz ke folder ini."
+        return 1
+      fi
+
+      # ── 5. Urutkan menurun & buat label menu ───────────────────────────
+      local _sorted_vers=()
+      mapfile -t _sorted_vers < <(printf '%s\n' "${!_ver_source[@]}" | sort -Vr)
+
+      local _ver_labels=()
+      for _v in "${_sorted_vers[@]}"; do
+        case "${_ver_source[$_v]}" in
+          local)  _ver_labels+=("${_v}  [lokal]") ;;
+          github) _ver_labels+=("${_v}  [GitHub]") ;;
+          both)   _ver_labels+=("${_v}  [lokal + GitHub]") ;;
+        esac
+      done
+
+      # ── 6. Pilih versi via arrow-key menu ─────────────────────────────
+      echo ""
+      _arrow_select "Pilih versi yang akan dipasang:" _ver_labels
+      local _sel_ver="${_sorted_vers[$_ARROW_SEL]}"
+      local _sel_src="${_ver_source[$_sel_ver]}"
+      echo -e "  ${G}✔${NC} Versi dipilih: ${W}${_sel_ver}${NC}"
+      echo ""
+
+      # ── 7. Resolve ke file lokal atau unduh dari GitHub ────────────────
+      local tarfile=""
+      if [[ "$_sel_src" == "local" || "$_sel_src" == "both" ]]; then
+        # Gunakan file lokal
+        local _matching_files=()
+        mapfile -t _matching_files < <(
+          printf '%s\n' "${_local_ver_map[$_sel_ver]}" | tr '|' '\n' | grep .
+        )
+        if [[ ${#_matching_files[@]} -eq 1 ]]; then
+          tarfile="${_matching_files[0]}"
+        else
+          _arrow_select "Pilih file lokal:" _matching_files
+          tarfile="${_matching_files[$_ARROW_SEL]}"
+        fi
+      else
+        # Hanya ada di GitHub → unduh
         echo -e "  ${DIM}Rilis publik → biarkan PAT kosong. Isi hanya bila repo rilis privat.${NC}"
         local _ghtoken _auth=()
         read -rsp "  GitHub PAT (kosongkan untuk rilis publik): " _ghtoken; echo
         [[ -n "$_ghtoken" ]] && _auth=(-H "Authorization: token ${_ghtoken}")
 
-        # Deteksi tag rilis terbaru via GitHub API (terautentikasi bila token diisi)
-        local _tag _httpcode
-        _tag=$(curl -fsSL "${_auth[@]}" "https://api.github.com/repos/${_ghrepo}/releases/latest" 2>/dev/null \
-                 | grep -oE '"tag_name":[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
-        if [[ -z "$_tag" ]]; then
-          # Tampilkan kode HTTP agar jelas penyebabnya (401 token salah / 404 tak ada akses)
-          _httpcode=$(curl -s -o /dev/null -w "%{http_code}" "${_auth[@]}" "https://api.github.com/repos/${_ghrepo}/releases/latest" 2>/dev/null)
-          warn "Gagal deteksi versi terbaru (GitHub HTTP ${_httpcode:-?})."
-          case "$_httpcode" in
-            401) echo -e "  ${DIM}→ Token salah/kadaluarsa.${NC}" ;;
-            404) echo -e "  ${DIM}→ Token tak punya akses ke repo privat (scope 'repo' kurang).${NC}" ;;
-          esac
-          read -rp "  Masukkan tag rilis manual (mis. v0.1.3): " _tag
-        else
-          read -rp "  Versi terbaru: ${_tag} — Enter untuk pakai, atau ketik tag lain: " _tsel
-          _tag="${_tsel:-$_tag}"
-        fi
-        [[ -z "$_tag" ]] && { err "Tag rilis kosong."; return 1; }
-        # Varian: geoportal / standalone / sub-direktori kustom
         local _variant
         if [[ -n "${GEOMDB_INSTALLER_VARIANT:-}" ]]; then
           _variant="${GEOMDB_INSTALLER_VARIANT}"
@@ -414,59 +519,52 @@ _apply_install_method() {
             esac
           done
         fi
-        local _asset="geomdb-hub-${_tag}-${_variant}-installer.tar.gz"
+
+        local _asset="geomdb-hub-${_sel_ver}-${_variant}-installer.tar.gz"
         info "Mengunduh ${_asset} (bisa beberapa menit)..."
         if [[ -n "$_ghtoken" ]]; then
-          # Privat: resolve asset id via API, lalu unduh via endpoint assets (octet-stream)
           local _rel _aid
           _rel=$(curl -fsSL -H "Authorization: token ${_ghtoken}" \
-                   "https://api.github.com/repos/${_ghrepo}/releases/tags/${_tag}" 2>/dev/null)
-          [[ -z "$_rel" ]] && { err "Gagal akses rilis ${_tag}. Cek token (scope repo) & tag."; return 1; }
+                   "https://api.github.com/repos/${_ghrepo}/releases/tags/${_sel_ver}" 2>/dev/null)
+          [[ -z "$_rel" ]] && { err "Gagal akses rilis ${_sel_ver}. Cek token (scope repo) & tag."; return 1; }
           if command -v python3 &>/dev/null; then
-            _aid=$(printf '%s' "$_rel" | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((a['id'] for a in d.get('assets',[]) if a['name']=='${_asset}'),''))" 2>/dev/null)
+            _aid=$(printf '%s' "$_rel" | python3 -c \
+              "import sys,json;d=json.load(sys.stdin);print(next((a['id'] for a in d.get('assets',[]) if a['name']=='${_asset}'),''))" 2>/dev/null)
           else
-            _aid=$(printf '%s' "$_rel" | grep -B5 "\"name\": \"${_asset}\"" | grep -oE '"id": [0-9]+' | head -1 | grep -oE '[0-9]+')
+            _aid=$(printf '%s' "$_rel" | grep -B5 "\"name\": \"${_asset}\"" \
+              | grep -oE '"id": [0-9]+' | head -1 | grep -oE '[0-9]+')
           fi
-          [[ -z "$_aid" ]] && { err "Asset ${_asset} tidak ditemukan di rilis ${_tag} (cek varian)."; return 1; }
+          [[ -z "$_aid" ]] && { err "Asset ${_asset} tidak ditemukan di rilis ${_sel_ver}."; return 1; }
           curl -fL -H "Authorization: token ${_ghtoken}" -H "Accept: application/octet-stream" \
             -o "$_asset" "https://api.github.com/repos/${_ghrepo}/releases/assets/${_aid}" \
             || { err "Gagal mengunduh asset (cek token/jaringan)."; rm -f "$_asset"; return 1; }
         else
-          # Publik: unduh langsung
-          local _url="https://github.com/${_ghrepo}/releases/download/${_tag}/${_asset}"
+          local _url="https://github.com/${_ghrepo}/releases/download/${_sel_ver}/${_asset}"
           if command -v curl &>/dev/null; then
-            curl -fL --retry 3 -o "$_asset" "$_url" || { err "Gagal mengunduh dari ${_url}."; rm -f "$_asset"; return 1; }
+            curl -fL --retry 3 -o "$_asset" "$_url" \
+              || { err "Gagal mengunduh dari ${_url}."; rm -f "$_asset"; return 1; }
           elif command -v wget &>/dev/null; then
-            wget -O "$_asset" "$_url" || { err "Gagal mengunduh dari ${_url}."; rm -f "$_asset"; return 1; }
+            wget -O "$_asset" "$_url" \
+              || { err "Gagal mengunduh dari ${_url}."; rm -f "$_asset"; return 1; }
           else
             err "curl/wget tidak tersedia untuk mengunduh."; return 1
           fi
         fi
-        gzip -t "$_asset" 2>/dev/null || { err "File terunduh tidak valid (kemungkinan tag/varian salah)."; rm -f "$_asset"; return 1; }
+        gzip -t "$_asset" 2>/dev/null \
+          || { err "File terunduh tidak valid (tag/varian salah?)."; rm -f "$_asset"; return 1; }
         info "Mengekstrak image bundle dari installer..."
         tar -xzf "$_asset"
         local _img
-        _img=$(ls "geomdb-hub-${_tag}/geomdb-hub-${_tag}-${_variant}.tar.gz" 2>/dev/null | head -1)
+        _img=$(ls "geomdb-hub-${_sel_ver}/geomdb-hub-${_sel_ver}-${_variant}.tar.gz" 2>/dev/null | head -1)
         if [[ -z "$_img" ]]; then
           err "Image bundle tidak ditemukan di dalam ${_asset}."; return 1
         fi
         cp "$_img" .
-        rm -f "$_asset"; rm -rf "geomdb-hub-${_tag}"
+        rm -f "$_asset"; rm -rf "geomdb-hub-${_sel_ver}"
         ok "Image bundle siap: $(basename "$_img")"
-        mapfile -t tarfiles < <(ls geomdb-hub-*-standalone.tar.gz geomdb-hub-*-geoportal.tar.gz "geomdb-hub-${_tag}-${_variant}.tar.gz" 2>/dev/null | sort -u || true)
-        [[ ${#tarfiles[@]} -eq 0 ]] && { err "Image bundle tidak ditemukan setelah unduh."; return 1; }
+        tarfile="geomdb-hub-${_sel_ver}-${_variant}.tar.gz"
       fi
-      local tarfile="${tarfiles[0]}"
-      if [[ ${#tarfiles[@]} -gt 1 ]]; then
-        echo ""
-        echo -e "  ${W}File installer ditemukan:${NC}"
-        for i in "${!tarfiles[@]}"; do
-          echo "  $((i+1))) ${tarfiles[$i]}"
-        done
-        read -rp "  Pilih file [1]: " _ti
-        local _idx=$(( ${_ti:-1} - 1 ))
-        tarfile="${tarfiles[$_idx]}"
-      fi
+
       info "Memuat image dari ${tarfile} (bisa beberapa menit)..."
       docker load < "$tarfile"
       ok "Image berhasil dimuat dari ${tarfile}."
@@ -684,6 +782,9 @@ fn_deploy() {
           warn "Jalankan menu 'Konfigurasi SSL' untuk mengganti dengan sertifikat asli."
         fi
       fi
+      local _sc="config/nginx/conf.d/geomdb-ssl.conf"
+      [[ -d "$_sc" ]] && rm -rf "$_sc"
+      [[ -f "$_sc" ]] || touch "$_sc"
       if docker compose ps nginx 2>/dev/null | grep -q "running"; then
         docker compose exec nginx nginx -t && \
           docker compose exec nginx nginx -s reload && ok "Nginx reloaded."
@@ -959,6 +1060,12 @@ _ssl_self_signed_auto() {
 }
 
 _ssl_nginx_reload() {
+  # Pastikan geomdb-ssl.conf adalah file sebelum nginx start/reload.
+  # Docker bind-mount path yang tidak ada → buat direktori → nginx crash (errno 21).
+  local _sc="config/nginx/conf.d/geomdb-ssl.conf"
+  [[ -d "$_sc" ]] && rm -rf "$_sc"
+  [[ -f "$_sc" ]] || touch "$_sc"
+
   if docker compose ps nginx 2>/dev/null | grep -q "running"; then
     docker compose exec nginx nginx -t && \
     docker compose exec nginx nginx -s reload && \
