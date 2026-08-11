@@ -425,10 +425,17 @@ _apply_install_method() {
       done
 
       # ── 3. Ambil daftar rilis dari GitHub (anonim, batas 8 detik) ──────
+      # GEOMDB_GH_TOKEN opsional: repo publik tidak butuh token sama sekali,
+      # tapi limit rate anonim GitHub cuma 60 req/jam per-IP — kalau server
+      # berbagi IP/NAT dengan layanan lain di instansi, gampang kena limit
+      # meski koneksi ke GitHub sendiri baik-baik saja. Isi token (PAT dengan
+      # scope "public_repo" cukup) untuk naik ke limit 5000 req/jam.
       local _ghrepo="${GEOMDB_GH_REPO:-hariHK1/geomdb-hub-installer}"
+      local -a _gh_curl_auth=()
+      [[ -n "${GEOMDB_GH_TOKEN:-}" ]] && _gh_curl_auth=(-H "Authorization: token ${GEOMDB_GH_TOKEN}")
       local _gh_tags=()
       echo -ne "  ${DIM}Mengambil daftar rilis GitHub...${NC} "
-      mapfile -t _gh_tags < <(curl -fsSL --max-time 8 \
+      mapfile -t _gh_tags < <(curl -fsSL --max-time 8 "${_gh_curl_auth[@]}" \
         "https://api.github.com/repos/${_ghrepo}/releases" 2>/dev/null \
         | grep -oE '"tag_name":[[:space:]]*"[^"]+"' \
         | sed -E 's/.*"([^"]+)"$/\1/' \
