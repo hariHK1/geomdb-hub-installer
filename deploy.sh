@@ -2154,7 +2154,7 @@ fn_generate_env() {
       # ── 3. WhatsApp OTP ───────────────────────────────────────────────────
       echo ""
       echo -e "  ${W}┌─ WhatsApp OTP ───────────────────────────────────────────────┐${NC}"
-      echo -e "  ${Y}⚠  Jika DIAKTIFKAN: image lebih besar ~500MB (Chromium + whatsapp-web.js).${NC}"
+      echo -e "  ${Y}⚠  Jika DIAKTIFKAN: image menyertakan pustaka WhatsApp (Baileys).${NC}"
       echo -e "  ${DIM}Fitur ini bisa diaktifkan nanti dengan generate ulang .env dan rebuild.${NC}"
       local _xl_wa="false"
       read -rp "  Aktifkan fitur WhatsApp OTP? (y/N): " _v
@@ -2536,7 +2536,7 @@ NODE_ENV=production
 ALLOWED_ORIGINS={app_url},http://localhost:{p_app}
 API_SECRET_KEY={sk}
 WA_ENABLED={wa_s}
-WA_SESSION_DIR=./.wwebjs_auth
+WA_SESSION_DIR=./.baileys_auth
 MAIL_TIMEOUT=10000
 """
     with open(".env","w",encoding="utf-8") as f: f.write(main_env)
@@ -2587,7 +2587,7 @@ def preview(cfg):
     ng_mode=("Docker container (dikelola deploy.sh)" if use_ng and not ext_ng
              else "Eksternal (Nginx di luar Docker)" if use_ng
              else "Tidak digunakan (akses langsung via port)")
-    wa_lbl="Aktif (+Chromium, build besar)" if wa_en else "Nonaktif (skip Chromium)"
+    wa_lbl="Aktif (Baileys)" if wa_en else "Nonaktif (skip Baileys)"
     LB=28; VW=37
     def row(lbl,val): print(f"  │  {lbl:<{LB}} {str(val)[:VW]:<{VW}}│")
     def sep(): print("  ├──────────────────────────────────────────────────────────────────┤")
@@ -2953,9 +2953,9 @@ GEOMDB_PY_EOF
   echo -e "\n  ${W}┌─ WhatsApp OTP ───────────────────────────────────────────────┐${NC}"
   echo -e "  ${DIM}Fitur WA mengirim kode OTP via pesan WhatsApp sebagai alternatif email.${NC}"
   echo -e "  ${DIM}Membutuhkan nomor WA aktif yang di-scan di dashboard ext-serv setelah deploy.${NC}"
-  echo -e "  ${Y}⚠  Jika DIAKTIFKAN: build menyertakan Chromium & whatsapp-web.js${NC}"
+  echo -e "  ${Y}⚠  Jika DIAKTIFKAN: build menyertakan pustaka WhatsApp (Baileys)${NC}"
   echo -e "  ${Y}   → ukuran image lebih besar ~500MB, build lebih lama.${NC}"
-  echo -e "  ${DIM}Jika TIDAK diaktifkan: Chromium tidak diinstal, image lebih kecil & cepat.${NC}"
+  echo -e "  ${DIM}Jika TIDAK diaktifkan: Baileys tidak dipasang, image lebih kecil & cepat.${NC}"
   echo -e "  ${DIM}Fitur ini bisa diaktifkan nanti dengan generate ulang .env dan rebuild.${NC}"
   local wa_enabled="false"
   read -rp "  Aktifkan fitur WhatsApp OTP? (y/N): " _v
@@ -3088,7 +3088,7 @@ GEOMDB_PY_EOF
   printf  "  │  %-28s %-37s│\n" "Dashboard ext-serv user:"  "$UI_USER"
   printf  "  │  %-28s %-37s│\n" "Swagger UI user:"     "$SWAGGER_USER"
   echo    "  ├──────────────────────────────────────────────────────────────────┤"
-  local _wa_label; [[ "$wa_enabled" == "true" ]] && _wa_label="Aktif (+Chromium, build besar)" || _wa_label="Nonaktif (skip Chromium)"
+  local _wa_label; [[ "$wa_enabled" == "true" ]] && _wa_label="Aktif (Baileys)" || _wa_label="Nonaktif (skip Baileys)"
   printf  "  │  %-28s %-37s│\n" "WhatsApp OTP:"        "$_wa_label"
   echo    "  ├──────────────────────────────────────────────────────────────────┤"
   printf  "  │  %-28s %-37s│\n" "CSW Judul:"           "$CSW_TITLE"
@@ -3309,7 +3309,7 @@ MAINENV
   # ── Tulis ext_serv-main/.env ──────────────────────────────────────────────
   # Di installer mode folder ext_serv-main/ tidak ada (tanpa source), tapi file
   # .env tetap diperlukan — docker-compose memuatnya via env_file untuk
-  # SWAGGER_USER, UI_USERNAME, JWT_SECRET, PUPPETEER_EXECUTABLE_PATH, dll.
+  # SWAGGER_USER, UI_USERNAME, JWT_SECRET, dll.
   mkdir -p ext_serv-main
   cat > ext_serv-main/.env <<EXTENV
 # ════════════════════════════════════════════════════════════
@@ -3336,12 +3336,9 @@ SWAGGER_USER=${SWAGGER_USER}
 SWAGGER_PASSWORD=${SWAGGER_PASS}
 
 # ─── WhatsApp ─────────────────────────────────────────────────
-# false = skip Chromium & whatsapp-web.js (rebuild diperlukan jika diubah)
+# false = skip Baileys (rebuild diperlukan jika diubah)
 WA_ENABLED=${wa_enabled}
-WA_SESSION_DIR=./.wwebjs_auth
-# Path Chromium di dalam Docker image (sudah terinstall di image ext-serv).
-# Ganti jika Chromium berada di lokasi berbeda di server Anda.
-PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+WA_SESSION_DIR=./.baileys_auth
 
 # ─── Dashboard UI Auth ────────────────────────────────────────
 UI_USERNAME=${UI_USER}
@@ -3435,6 +3432,262 @@ fn_start_containers() {
   esac
 }
 
+# ─── Verifikasi .env terhadap template versi ini ─────────────────────────────
+# Acuan key diambil dari heredoc di dalam skrip ini sendiri (MAINENV / EXTENV),
+# BUKAN daftar manual — sehingga otomatis ikut berubah setiap kali template
+# diperbarui dan tidak bisa basi.
+#
+# PRINSIP AMAN:
+#   • Menambah key yang hilang  → otomatis (risiko rendah).
+#   • Mengubah nilai yang beda  → tanya per-key, default TIDAK. Nilai menyimpang
+#     sering merupakan penyesuaian sengaja (mis. MINIO_ENDPOINT diarahkan ke IP
+#     server), bukan sisa versi lama.
+#   • Key tak dikenal template  → tanya per-key, default TIDAK. Template BUKAN
+#     daftar lengkap env aplikasi: mis. ARCGIS_PROBE_DOMAINS adalah allowlist
+#     SSRF yang dibaca kode tapi tidak pernah di-generate. Mengomentarinya akan
+#     mematikan fitur.
+
+# Versi aplikasi: dari package.json (mode source) atau nama folder installer
+# (bundel rilis diekstrak sebagai geomdb-hub-v1.1.4/). Hanya untuk penanda
+# komentar, jadi fallback lunak sudah memadai.
+_app_version() {
+  local v=""
+  if [[ -f package.json ]]; then v="$(grep -m1 '"version"' package.json | cut -d'"' -f4)"; fi
+  if [[ -z "$v" ]]; then
+    local d; d="$(basename "$PWD")"
+    case "$d" in geomdb-hub-*) v="${d#geomdb-hub-}"; v="${v#v}" ;; esac
+  fi
+  echo "${v:-ini}"
+}
+
+# Isi blok heredoc dari skrip ini.
+_env_tpl_block() {
+  awk -v m="$1" '
+    index($0, "<<" m) && !inb { inb=1; next }
+    inb && $0 == m            { exit }
+    inb                       { print }
+  ' "${BASH_SOURCE[0]}"
+}
+
+# Key WAJIB: baris literal `KEY=...`.
+_env_tpl_keys() {
+  { _env_tpl_block "$1" | grep -E '^[A-Z_][A-Z0-9_]*=' || true; } | sed -E 's/=.*//' | sort -u
+}
+
+# Key OPSIONAL: dipancarkan lewat ekspansi kondisional, mis.
+#   $( [[ -n "${P_HTTP}" ]] && echo "PORT_HTTP=${P_HTTP}" )
+# Dikenal template, tapi wajar tidak ada di .env — jangan dianggap asing.
+_env_tpl_optional_keys() {
+  # `|| true`: blok tanpa key kondisional (mis. EXTENV) membuat grep keluar 1;
+  # dengan `set -o pipefail` itu menjatuhkan seluruh pipeline dan mematikan fungsi.
+  { _env_tpl_block "$1" | grep -oE 'echo "[A-Z_][A-Z0-9_]*=' || true; } | sed 's/echo "//' | sed 's/=$//' | sort -u
+}
+
+_env_tpl_value() {
+  { _env_tpl_block "$1" | grep -E "^$2=" || true; } | head -1 | sed -E "s/^$2=//"
+}
+
+_env_file_keys() {
+  [[ -f "$1" ]] || return 0
+  { grep -E '^[A-Z_][A-Z0-9_]*=' "$1" || true; } | sed -E 's/=.*//' | sort -u
+}
+
+_env_file_value() {
+  { grep -E "^$2=" "$1" 2>/dev/null || true; } | head -1 | sed -E "s/^$2=//" \
+    | sed -E 's/^"(.*)"$/\1/' | sed -E "s/^'(.*)'\$/\1/"
+}
+
+# Sembunyikan nilai rahasia saat ditampilkan.
+_env_mask() {
+  case "$1" in
+    *PASSWORD*|*SECRET*|*_KEY*|*KEY_*|*TOKEN*|*SALT*) echo "********" ;;
+    *) echo "$2" ;;
+  esac
+}
+
+# Bandingkan satu file .env dengan templatenya.
+# Mengisi: _VE_BARU (KEY=nilai) _VE_ASING (KEY) _VE_BEDA (KEY|kini|template) _VE_MANUAL (KEY)
+_env_compare() {
+  local file="$1" marker="$2"
+  _VE_BARU=(); _VE_ASING=(); _VE_BEDA=(); _VE_MANUAL=()
+
+  local tpl_keys opt_keys file_keys k tval fval
+  tpl_keys="$(_env_tpl_keys "$marker")"
+  opt_keys="$(_env_tpl_optional_keys "$marker")"
+  file_keys="$(_env_file_keys "$file")"
+
+  while read -r k; do
+    [[ -z "$k" ]] && continue
+    if ! grep -qx "$k" <<< "$file_keys"; then
+      tval="$(_env_tpl_value "$marker" "$k")"
+      if [[ "$tval" == *'$'* ]]; then _VE_MANUAL+=("$k")
+      else _VE_BARU+=("$k=$tval"); fi
+    fi
+  done <<< "$tpl_keys"
+
+  while read -r k; do
+    [[ -z "$k" ]] && continue
+    grep -qx "$k" <<< "$tpl_keys" && continue
+    grep -qx "$k" <<< "$opt_keys" && continue
+    _VE_ASING+=("$k")
+  done <<< "$file_keys"
+
+  while read -r k; do
+    [[ -z "$k" ]] && continue
+    grep -qx "$k" <<< "$file_keys" || continue
+    tval="$(_env_tpl_value "$marker" "$k")"
+    [[ "$tval" == *'$'* ]] && continue
+    tval="$(sed -E 's/^"(.*)"$/\1/' <<< "$tval")"
+    fval="$(_env_file_value "$file" "$k")"
+    if [[ "$tval" != "$fval" ]]; then _VE_BEDA+=("$k|$fval|$tval"); fi
+  done <<< "$tpl_keys"
+}
+
+# Tampilkan hasil perbandingan satu file.
+_env_report() {
+  local file="$1" total=0 item k f t
+  echo -e "\n  ${W}${file}${NC}"
+
+  if ((${#_VE_BARU[@]})); then
+    echo -e "  ${G}+ Key hilang — akan DITAMBAHKAN otomatis:${NC}"
+    for item in "${_VE_BARU[@]}"; do
+      k="${item%%=*}"; echo -e "      ${G}+${NC} $k=$(_env_mask "$k" "${item#*=}")"
+    done
+    total=$((total+${#_VE_BARU[@]}))
+  fi
+  if ((${#_VE_BEDA[@]})); then
+    echo -e "  ${C}~ Nilai beda dari default versi ini — DITANYA satu per satu:${NC}"
+    for item in "${_VE_BEDA[@]}"; do
+      IFS='|' read -r k f t <<< "$item"
+      echo -e "      ${C}~${NC} $k :  $(_env_mask "$k" "$f")  ->  $(_env_mask "$k" "$t")"
+    done
+    echo -e "      ${DIM}Bisa jadi penyesuaian sengaja — biarkan bila memang disetel manual.${NC}"
+    total=$((total+${#_VE_BEDA[@]}))
+  fi
+  if ((${#_VE_ASING[@]})); then
+    echo -e "  ${Y}? Tidak dikenal template — DITANYA satu per satu:${NC}"
+    for k in "${_VE_ASING[@]}"; do echo -e "      ${Y}?${NC} $k"; done
+    echo -e "      ${DIM}Template bukan daftar lengkap env aplikasi; sebagian key sah${NC}"
+    echo -e "      ${DIM}dibaca kode tanpa pernah di-generate. Jangan komentari bila ragu.${NC}"
+    total=$((total+${#_VE_ASING[@]}))
+  fi
+  if ((${#_VE_MANUAL[@]})); then
+    echo -e "  ${Y}! Key hilang bernilai rahasia — ISI MANUAL:${NC}"
+    for k in "${_VE_MANUAL[@]}"; do echo -e "      ${Y}!${NC} $k"; done
+    echo -e "      ${DIM}Tidak diisi otomatis agar rahasia tidak ditebak/ditimpa.${NC}"
+  fi
+
+  if ((total == 0 && ${#_VE_MANUAL[@]} == 0)); then
+    echo -e "  ${G}✓${NC} Sudah sesuai template versi ini."
+  fi
+  return 0
+}
+
+# Terapkan perubahan ke satu file (setelah konfirmasi global).
+_env_apply() {
+  local file="$1" ver="$2" item k f t ans changed=0
+  local stamp; stamp="$(date '+%Y%m%d-%H%M%S')"
+  cp "$file" "${file}.bak-${stamp}" && info "Backup: ${file}.bak-${stamp}"
+
+  if ((${#_VE_BARU[@]})); then
+    { echo ""
+      echo "# --- Ditambahkan oleh Verifikasi .env (versi ${ver}) - ${stamp} ---"
+      for item in "${_VE_BARU[@]}"; do echo "$item"; done
+    } >> "$file"
+    changed=$((changed+${#_VE_BARU[@]}))
+    ok "  ${#_VE_BARU[@]} key ditambahkan."
+  fi
+
+  for item in "${_VE_BEDA[@]}"; do
+    IFS='|' read -r k f t <<< "$item"
+    echo -e "    ${C}~${NC} $k :  $(_env_mask "$k" "$f")  ->  $(_env_mask "$k" "$t")"
+    read -rp "      Ubah nilai ini? (y/N): " ans
+    if [[ "${ans,,}" == "y" ]]; then
+      sed -i -E "s|^${k}=.*\$|${k}=${t}|" "$file"; changed=$((changed+1))
+      ok "      $k diperbarui."
+    else
+      info "      $k dibiarkan."
+    fi
+  done
+
+  for k in "${_VE_ASING[@]}"; do
+    echo -e "    ${Y}?${NC} $k tidak dikenal template versi ini."
+    read -rp "      Nonaktifkan (komentari)? (y/N): " ans
+    if [[ "${ans,,}" == "y" ]]; then
+      sed -i -E "s|^(${k}=.*)\$|# \1  # dinonaktifkan oleh Verifikasi .env (versi ${ver})|" "$file"
+      changed=$((changed+1)); ok "      $k dikomentari."
+    else
+      info "      $k dipertahankan."
+    fi
+  done
+
+  chmod 600 "$file" 2>/dev/null || true
+  if ((changed)); then ok "Selesai: $file ($changed perubahan)"; else warn "Tidak ada perubahan pada $file"; fi
+  return 0
+}
+
+fn_verify_env() {
+  echo -e "\n${W}  Verifikasi .env${NC}"
+  echo "  ---------------------------------------------"
+
+  local ver; ver="$(_app_version)"
+  echo -e "  ${DIM}Membandingkan .env yang ada dengan template versi ${ver},${NC}"
+  echo -e "  ${DIM}dibaca langsung dari template di dalam deploy.sh ini.${NC}"
+
+  local files=(".env" "ext_serv-main/.env")
+  local markers=("MAINENV" "EXTENV")
+  local i any=0
+  local -a s_baru s_asing s_beda
+
+  # ── Tahap 1: PREVIEW ──────────────────────────────────────────────────────
+  for i in "${!files[@]}"; do
+    if [[ ! -f "${files[$i]}" ]]; then
+      echo -e "\n  ${W}${files[$i]}${NC}"; warn "  Tidak ditemukan — lewati."
+      s_baru[$i]=""; s_asing[$i]=""; s_beda[$i]=""; continue
+    fi
+    _env_compare "${files[$i]}" "${markers[$i]}"
+    _env_report  "${files[$i]}"
+    s_baru[$i]="$(printf '%s\n' ${_VE_BARU[@]+"${_VE_BARU[@]}"})"
+    s_asing[$i]="$(printf '%s\n' ${_VE_ASING[@]+"${_VE_ASING[@]}"})"
+    s_beda[$i]="$(printf '%s\n' ${_VE_BEDA[@]+"${_VE_BEDA[@]}"})"
+    if (( ${#_VE_BARU[@]} + ${#_VE_ASING[@]} + ${#_VE_BEDA[@]} )); then any=1; fi
+  done
+
+  if [[ "$any" == "0" ]]; then
+    echo ""; ok "Tidak ada yang perlu diubah — .env sudah sesuai versi ${ver}."
+    return
+  fi
+
+  # ── Tahap 2: KONFIRMASI ───────────────────────────────────────────────────
+  echo ""
+  echo -e "  ${Y}Backup otomatis dibuat sebelum perubahan (.bak-<timestamp>).${NC}"
+  read -rp "  Lanjut ke tahap perubahan? (y/N): " _yn
+  [[ "${_yn,,}" == "y" ]] || { warn "Dibatalkan — tidak ada berkas yang diubah."; return; }
+
+  # ── Tahap 3: TERAPKAN ─────────────────────────────────────────────────────
+  for i in "${!files[@]}"; do
+    [[ -f "${files[$i]}" ]] || continue
+    mapfile -t _VE_BARU  < <(grep -v '^$' <<< "${s_baru[$i]}")
+    mapfile -t _VE_ASING < <(grep -v '^$' <<< "${s_asing[$i]}")
+    mapfile -t _VE_BEDA  < <(grep -v '^$' <<< "${s_beda[$i]}")
+    if (( ${#_VE_BARU[@]} + ${#_VE_ASING[@]} + ${#_VE_BEDA[@]} )) ; then :; else continue; fi
+    echo -e "\n  ${W}${files[$i]}${NC}"
+    _env_apply "${files[$i]}" "$ver"
+  done
+
+  # ── Tahap 4: PREVIEW HASIL ────────────────────────────────────────────────
+  echo -e "\n  ${W}-- Hasil akhir --${NC}"
+  for i in "${!files[@]}"; do
+    [[ -f "${files[$i]}" ]] || continue
+    _env_compare "${files[$i]}" "${markers[$i]}"
+    _env_report  "${files[$i]}"
+  done
+
+  echo ""
+  warn "Perubahan .env baru aktif setelah container di-restart:"
+  echo -e "      ${DIM}docker compose up -d --force-recreate${NC}"
+}
+
 main_menu() {
   _load_env_quiet
   # Deteksi mode: installer (tidak ada .git) vs development (ada .git)
@@ -3445,6 +3698,7 @@ main_menu() {
     show_header
     echo "  ┌─────────────────────────────────────────────┐"
     echo "  │  9. Generate .env    (setup awal)            │"
+    echo "  │  v. Verifikasi .env  (cek beda antar versi)  │"
     echo "  │  ─────────────────────────────────────────  │"
     if [[ "$_has_git" == "true" ]]; then
     echo "  │  1. Switch branch                            │"
@@ -3469,6 +3723,7 @@ main_menu() {
 
     case $choice in
       9) fn_generate_env ;;
+      v|V) fn_verify_env ;;
       1) [[ "$_has_git" == "true" ]] && fn_switch_branch || warn "Menu ini hanya tersedia di mode development." ;;
       2) [[ "$_has_git" == "true" ]] && fn_pull         || warn "Menu ini hanya tersedia di mode development." ;;
       3) _is_installer_mode && warn "Deploy lokal tidak tersedia di installer mode (butuh source code). Gunakan menu 4." || fn_deploy_local ;;
