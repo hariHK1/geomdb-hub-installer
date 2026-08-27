@@ -3106,7 +3106,7 @@ GEOMDB_PY_EOF
   echo ""
   info "Membuat secrets..."
 
-  local PG_PASS REDIS_PASS MINIO_PASS APP_JWT APP_SECRET ENC_KEY IP_SALT HEALTH_KEY SHARED_KEY EXT_JWT SWAGGER_PASS
+  local PG_PASS REDIS_PASS MINIO_PASS APP_JWT APP_SECRET ENC_KEY IP_SALT HEALTH_KEY SHARED_KEY EXT_JWT SWAGGER_PASS SA_KEY
   PG_PASS=$(openssl rand -hex 24)
   REDIS_PASS=$(openssl rand -hex 24)
   MINIO_PASS=$(openssl rand -hex 24)
@@ -3118,6 +3118,11 @@ GEOMDB_PY_EOF
   SHARED_KEY=$(openssl rand -hex 32)   # kunci integrasi: sama di kedua .env
   EXT_JWT=$(openssl rand -hex 32)
   SWAGGER_PASS=$(openssl rand -hex 16)
+  # Kunci enkripsi Server Actions Next.js HARUS STABIL antar-deploy: kalau berubah,
+  # action-ID ikut berubah dan aplikasi melempar "Failed to find Server Action".
+  # Karena itu nilai lama dipertahankan bila .env sudah ada.
+  SA_KEY=$(grep -E '^NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"')
+  [[ -n "$SA_KEY" ]] || SA_KEY=$(openssl rand -base64 32)
   [[ -n "$UI_PASS" ]] || UI_PASS=$(openssl rand -hex 12)
 
   ok "Secrets berhasil di-generate."
@@ -3160,6 +3165,9 @@ ENCRYPTION_KEY="${ENC_KEY}"
 # ─── Aplikasi ────────────────────────────────────────────────
 NEXT_PUBLIC_APP_URL="${FULL_APP_URL}"
 APP_URL="${FULL_APP_URL}"
+# Kunci enkripsi Server Actions Next.js — HARUS STABIL antar-build agar action-ID
+# konsisten dan tidak muncul error "Failed to find Server Action".
+NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="${SA_KEY}"
 $(  [[ -n "${BASE_PATH}" ]] && echo "NEXT_PUBLIC_BASE_PATH=${BASE_PATH}" )
 $(  [[ -n "${CUSTOM_APP_IMAGE}" ]] && echo "GEOMDB_APP_IMAGE=${CUSTOM_APP_IMAGE}" )
 WA_ENABLED=${wa_enabled}
