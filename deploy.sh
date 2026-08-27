@@ -3538,6 +3538,9 @@ _env_compare() {
     tval="$(_env_tpl_value "$marker" "$k")"
     [[ "$tval" == *'$'* ]] && continue
     tval="$(sed -E 's/^"(.*)"$/\1/' <<< "$tval")"
+    # Default kosong di template = "tidak berpendapat" (mis. ARCGIS_PROBE_DOMAINS),
+    # bukan "harus dikosongkan". Jangan tagih instansi yang sudah mengisinya.
+    [[ -z "$tval" ]] && continue
     fval="$(_env_file_value "$file" "$k")"
     if [[ "$tval" != "$fval" ]]; then _VE_BEDA+=("$k|$fval|$tval"); fi
   done <<< "$tpl_keys"
