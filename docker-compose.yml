@@ -159,6 +159,17 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: "postgresql://geomdb:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/geomdb_hub"
+      # Skrip perawatan (mis. prisma/fix-qa-atasan.ts) menyentuh MinIO dan
+      # membangun URL absolut. .env memakai MINIO_ENDPOINT="localhost" yang benar
+      # untuk host, tetapi di dalam container "localhost" adalah container ini
+      # sendiri — harus ditimpa ke nama service, sama seperti pada service app.
+      APP_URL: "${APP_URL:-${NEXT_PUBLIC_APP_URL:-}}"
+      MINIO_URL: "http://minio:9000"
+      MINIO_ENDPOINT: "minio"
+      MINIO_PORT: "9000"
+    # Sengaja TIDAK depends_on minio: jalur migrasi inti tidak boleh ikut
+    # terblokir bila MinIO bermasalah. Menu perawatan di deploy.sh yang
+    # menyalakan minio lebih dulu.
     depends_on:
       postgres:
         condition: service_healthy
