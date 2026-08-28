@@ -3699,6 +3699,61 @@ fn_verify_env() {
   echo -e "      ${DIM}docker compose up -d --force-recreate${NC}"
 }
 
+# ─── Perbaikan blok "Mengetahui" pada dokumen QA ───────────────────────
+# Dokumen QA yang ditandatangani sebelum v1.1.8 mencetak blok "Mengetahui"
+# kosong karena membaca kolom warisan yang sudah tak terisi. Menu ini
+# mendeteksi dokumen tersebut lalu me-render & menandatanganinya ulang.
+fn_fix_qa_atasan() {
+  echo -e "
+${W}  Perbaikan dokumen QA — blok \"Mengetahui\" kosong${NC}"
+  echo "  ---------------------------------------------"
+  local ver; ver="$(_app_version)"
+  echo -e "  ${DIM}Dokumen QA yang ditandatangani sebelum v1.1.8 mencetak blok${NC}"
+  echo -e "  ${DIM}\"Mengetahui\" kosong. Menu ini mendeteksi dan memperbaikinya.${NC}"
+  echo -e "  ${DIM}Versi terpasang: ${ver}${NC}"
+  echo ""
+  warn "Nama yang dicetak adalah pemegang role ATASAN_WALIDATA SAAT INI."
+  echo -e "  ${DIM}Jangan jalankan bila instansi pernah berganti Atasan Walidata —${NC}"
+  echo -e "  ${DIM}siapa yang dulu mengonfirmasi tidak pernah direkam di basis data.${NC}"
+
+  info "Memastikan postgres & minio berjalan..."
+  docker compose up -d postgres minio >/dev/null 2>&1 || {
+    err "Gagal menyalakan postgres/minio."; return
+  }
+
+  # ── Tahap 1: PREVIEW ──────────────────────────────────────────
+  echo -e "
+  ${W}-- Deteksi --${NC}"
+  if ! docker compose run --rm migrate npx tsx prisma/fix-qa-atasan.ts; then
+    err "Deteksi gagal. Periksa pesan di atas."
+    return
+  fi
+
+  # ── Tahap 2: KONFIRMASI ───────────────────────────────────
+  echo ""
+  echo -e "  ${Y}Dokumen bertanda tangan akan DITULIS ULANG.${NC}"
+  echo -e "  ${DIM}Salinan lama disimpan otomatis di MinIO (.sebelum-perbaikan.pdf).${NC}"
+  echo -e "  ${DIM}Tanggal, token verifikasi, dan isi penilaian tidak berubah.${NC}"
+  read -rp "  Ketik PERBAIKI untuk melanjutkan: " _fq
+  [[ "$_fq" == "PERBAIKI" ]] || { warn "Dibatalkan — tidak ada dokumen yang diubah."; return; }
+
+  # ── Tahap 3: TERAPKAN ─────────────────────────────────────
+  echo -e "
+  ${W}-- Perbaikan --${NC}"
+  if ! docker compose run --rm migrate npx tsx prisma/fix-qa-atasan.ts --apply; then
+    err "Perbaikan gagal atau sebagian gagal. Periksa pesan di atas."
+    return
+  fi
+
+  # ── Tahap 4: PREVIEW HASIL ────────────────────────────────
+  echo -e "
+  ${W}-- Hasil akhir --${NC}"
+  docker compose run --rm migrate npx tsx prisma/fix-qa-atasan.ts || true
+
+  echo ""
+  ok "Selesai. Unduh ulang dokumen QA untuk memeriksa blok \"Mengetahui\"."
+}
+
 main_menu() {
   _load_env_quiet
   # Deteksi mode: installer (tidak ada .git) vs development (ada .git)
@@ -3724,6 +3779,7 @@ main_menu() {
     echo "  │  5. Clean Docker   (system prune)            │"
     echo "  │  6. Manajemen migrasi DB                     │"
     echo "  │  7. Flush Redis                              │"
+    echo "  │  q. Perbaikan dokumen QA (Mengetahui)        │"
     echo "  │  8. Konfigurasi SSL                          │"
     echo "  │  b. Backup & Restore                         │"
     echo "  │  0. Keluar                                   │"
@@ -3743,6 +3799,7 @@ main_menu() {
       5) fn_clean_docker ;;
       6) fn_db_menu ;;
       7) fn_flush_redis ;;
+      q|Q) fn_fix_qa_atasan ;;
       8) fn_ssl_menu ;;
       b|B) fn_backup_menu ;;
       0) echo -e "${G}  Sampai jumpa!${NC}\n"; exit 0 ;;
