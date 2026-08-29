@@ -3699,22 +3699,24 @@ fn_verify_env() {
   echo -e "      ${DIM}docker compose up -d --force-recreate${NC}"
 }
 
-# ─── Perbaikan blok "Mengetahui" pada dokumen QA ───────────────────────
-# Dokumen QA yang ditandatangani sebelum v1.1.8 mencetak blok "Mengetahui"
-# kosong karena membaca kolom warisan yang sudah tak terisi. Menu ini
-# mendeteksi dokumen tersebut lalu me-render & menandatanganinya ulang.
+# ─── Verifikasi ulang dokumen QA ──────────────────────────────────────
+# Dokumen QA yang tercatat SIGNED tetapi PDF-nya tidak bertanda tangan
+# sungguhan (dan/atau blok "Mengetahui"-nya kosong) dibuang, lalu record-nya
+# dimundurkan ke antrean konfirmasi Atasan Walidata. Skrip TIDAK
+# menandatangani apa pun — dokumen yang benar lahir dari alur normal.
 fn_fix_qa_atasan() {
   echo -e "
-${W}  Perbaikan dokumen QA — blok \"Mengetahui\" kosong${NC}"
+${W}  Verifikasi ulang dokumen QA${NC}"
   echo "  ---------------------------------------------"
   local ver; ver="$(_app_version)"
-  echo -e "  ${DIM}Dokumen QA yang ditandatangani sebelum v1.1.8 mencetak blok${NC}"
-  echo -e "  ${DIM}\"Mengetahui\" kosong. Menu ini mendeteksi dan memperbaikinya.${NC}"
+  echo -e "  ${DIM}Membuang dokumen QA yang tidak bertanda tangan sungguhan, lalu${NC}"
+  echo -e "  ${DIM}memundurkan statusnya ke \"menunggu konfirmasi atasan\".${NC}"
+  echo -e "  ${DIM}Isi penilaian TIDAK dihapus — Walidata tidak mengisi ulang form QA.${NC}"
   echo -e "  ${DIM}Versi terpasang: ${ver}${NC}"
   echo ""
-  warn "Nama yang dicetak adalah pemegang role ATASAN_WALIDATA SAAT INI."
-  echo -e "  ${DIM}Jangan jalankan bila instansi pernah berganti Atasan Walidata —${NC}"
-  echo -e "  ${DIM}siapa yang dulu mengonfirmasi tidak pernah direkam di basis data.${NC}"
+  warn "Data yang sudah terbit TETAP terbit; yang diperbaiki dokumennya."
+  echo -e "  ${DIM}Tetapi dokumen itu kehilangan status tertandatangani sampai${NC}"
+  echo -e "  ${DIM}Atasan Walidata mengonfirmasi ulang lewat email.${NC}"
 
   info "Memastikan postgres & minio berjalan..."
   docker compose up -d postgres minio >/dev/null 2>&1 || {
@@ -3724,34 +3726,88 @@ ${W}  Perbaikan dokumen QA — blok \"Mengetahui\" kosong${NC}"
   # ── Tahap 1: PREVIEW ──────────────────────────────────────────
   echo -e "
   ${W}-- Deteksi --${NC}"
-  if ! docker compose run --rm migrate npx tsx prisma/fix-qa-atasan.ts; then
+  if ! docker compose run --rm migrate npx tsx prisma/reset-qa-verifikasi.ts; then
     err "Deteksi gagal. Periksa pesan di atas."
     return
   fi
 
   # ── Tahap 2: KONFIRMASI ───────────────────────────────────
   echo ""
-  echo -e "  ${Y}Dokumen bertanda tangan akan DITULIS ULANG.${NC}"
-  echo -e "  ${DIM}Salinan lama disimpan otomatis di MinIO (.sebelum-perbaikan.pdf).${NC}"
-  echo -e "  ${DIM}Tanggal, token verifikasi, dan isi penilaian tidak berubah.${NC}"
-  read -rp "  Ketik PERBAIKI untuk melanjutkan: " _fq
-  [[ "$_fq" == "PERBAIKI" ]] || { warn "Dibatalkan — tidak ada dokumen yang diubah."; return; }
+  echo -e "  ${Y}Dokumen QA lama akan DIBUANG dan status verifikasinya dimundurkan.${NC}"
+  echo -e "  ${DIM}Salinan disimpan otomatis di MinIO (.sebelum-verifikasi-ulang.pdf).${NC}"
+  read -rp "  Ketik MUNDURKAN untuk melanjutkan: " _fq
+  [[ "$_fq" == "MUNDURKAN" ]] || { warn "Dibatalkan — tidak ada dokumen yang diubah."; return; }
 
   # ── Tahap 3: TERAPKAN ─────────────────────────────────────
   echo -e "
-  ${W}-- Perbaikan --${NC}"
-  if ! docker compose run --rm migrate npx tsx prisma/fix-qa-atasan.ts --apply; then
-    err "Perbaikan gagal atau sebagian gagal. Periksa pesan di atas."
+  ${W}-- Menjalankan --${NC}"
+  if ! docker compose run --rm migrate npx tsx prisma/reset-qa-verifikasi.ts --apply; then
+    err "Gagal atau sebagian gagal. Periksa pesan di atas."
     return
   fi
 
   # ── Tahap 4: PREVIEW HASIL ────────────────────────────────
   echo -e "
   ${W}-- Hasil akhir --${NC}"
-  docker compose run --rm migrate npx tsx prisma/fix-qa-atasan.ts || true
+  docker compose run --rm migrate npx tsx prisma/reset-qa-verifikasi.ts || true
 
   echo ""
-  ok "Selesai. Unduh ulang dokumen QA untuk memeriksa blok \"Mengetahui\"."
+  ok "Selesai. Lanjutkan dari aplikasi: Walidata kirim ulang email ke atasan."
+}
+
+# ─── Pra-render thumbnail katalog ──────────────────────────────────────
+# Thumbnail dirender saat kartu pertama kali dilihat, lalu disimpan. Tanpa
+# menu ini, pengunjung PERTAMA yang menggulir sampai sebuah kartu menanggung
+# ongkos rendernya. Di sini ongkos itu dipindah ke waktu yang kita pilih.
+fn_prerender_thumb() {
+  echo -e "
+${W}  Pra-render thumbnail katalog${NC}"
+  echo "  ---------------------------------------------"
+  echo -e "  ${DIM}Mengisi simpanan thumbnail lebih dulu supaya tidak ada pengunjung${NC}"
+  echo -e "  ${DIM}yang menunggu render pertama (bisa puluhan detik untuk layer berat).${NC}"
+  echo -e "  ${DIM}Yang sudah tersimpan dilewati — aman dijalankan berulang.${NC}"
+  echo ""
+  warn "Menghubungi server geospasial instansi sumber untuk tiap layer."
+  echo -e "  ${DIM}Konkurensi dibatasi 3 agar tidak terlihat seperti serangan.${NC}"
+
+  info "Memastikan postgres & minio berjalan..."
+  docker compose up -d postgres minio >/dev/null 2>&1 || {
+    err "Gagal menyalakan postgres/minio."; return
+  }
+
+  # ── Tahap 1: LAPORAN ──────────────────────────────────────────
+  echo -e "
+  ${W}-- Cakupan --${NC}"
+  if ! docker compose run --rm migrate npx tsx prisma/prerender-thumbnails.ts; then
+    err "Gagal membaca daftar. Periksa pesan di atas."
+    return
+  fi
+
+  # ── Tahap 2: PILIHAN ──────────────────────────────────────────
+  echo ""
+  echo "  1) Metadata terbit saja  (katalog publik)"
+  echo "  2) Semua metadata        (termasuk draf di menu Data)"
+  echo "  0) Batal"
+  read -rp "  Pilih: " _pt
+  local args=""
+  case "$_pt" in
+    1) args="--apply" ;;
+    2) args="--apply --semua" ;;
+    *) warn "Dibatalkan."; return ;;
+  esac
+
+  # ── Tahap 3: JALANKAN ─────────────────────────────────────────
+  echo -e "
+  ${W}-- Merender --${NC}"
+  echo -e "  ${DIM}Bisa lama pada jalan pertama. Ctrl-C aman: yang sudah tersimpan tetap ada.${NC}"
+  # shellcheck disable=SC2086
+  if ! docker compose run --rm migrate npx tsx prisma/prerender-thumbnails.ts $args; then
+    err "Sebagian gagal. Layanan yang sedang mati bisa dicoba lagi nanti."
+    return
+  fi
+
+  echo ""
+  ok "Selesai. Kartu di /katalog dan /data kini tampil dari simpanan."
 }
 
 main_menu() {
@@ -3779,7 +3835,8 @@ main_menu() {
     echo "  │  5. Clean Docker   (system prune)            │"
     echo "  │  6. Manajemen migrasi DB                     │"
     echo "  │  7. Flush Redis                              │"
-    echo "  │  q. Perbaikan dokumen QA (Mengetahui)        │"
+    echo "  │  q. Verifikasi ulang dokumen QA              │"
+    echo "  │  t. Pra-render thumbnail katalog             │"
     echo "  │  8. Konfigurasi SSL                          │"
     echo "  │  b. Backup & Restore                         │"
     echo "  │  0. Keluar                                   │"
@@ -3800,6 +3857,7 @@ main_menu() {
       6) fn_db_menu ;;
       7) fn_flush_redis ;;
       q|Q) fn_fix_qa_atasan ;;
+      t|T) fn_prerender_thumb ;;
       8) fn_ssl_menu ;;
       b|B) fn_backup_menu ;;
       0) echo -e "${G}  Sampai jumpa!${NC}\n"; exit 0 ;;
