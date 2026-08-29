@@ -3699,6 +3699,24 @@ fn_verify_env() {
   echo -e "      ${DIM}docker compose up -d --force-recreate${NC}"
 }
 
+# ─── Skrip perawatan di dalam image ───────────────────────────────────
+# Installer dan image diperbarui TERPISAH, jadi jangan pernah berasumsi
+# keduanya seusia. Nama skrip pernah berganti (fix-qa-atasan.ts menjadi
+# reset-qa-verifikasi.ts) dan itu membuat deploy.sh lama gagal pada image baru
+# dengan ERR_MODULE_NOT_FOUND — jejak tumpukan Node yang tidak menjelaskan
+# apa-apa bagi operator. Sekarang image yang ditanya lebih dulu.
+#
+# Mencetak nama skrip pertama yang benar-benar ada; kosong bila tidak satu pun.
+_migrate_script() {
+  local daftar
+  daftar="$(docker compose run --rm --entrypoint sh migrate -c 'ls prisma/ 2>/dev/null' 2>/dev/null | tr -d '')" || true
+  local k
+  for k in "$@"; do
+    if grep -qx "${k#prisma/}" <<< "$daftar"; then echo "$k"; return 0; fi
+  done
+  echo ""
+}
+
 # ─── Verifikasi ulang dokumen QA ──────────────────────────────────────
 # Dokumen QA yang tercatat SIGNED tetapi PDF-nya tidak bertanda tangan
 # sungguhan (dan/atau blok "Mengetahui"-nya kosong) dibuang, lalu record-nya
@@ -3723,10 +3741,19 @@ ${W}  Verifikasi ulang dokumen QA${NC}"
     err "Gagal menyalakan postgres/minio."; return
   }
 
+  # Tanyakan image: nama skrip ini pernah berganti.
+  local skrip
+  skrip="$(_migrate_script prisma/reset-qa-verifikasi.ts prisma/fix-qa-atasan.ts)"
+  if [[ -z "$skrip" ]]; then
+    err "Image yang terpasang tidak memuat skrip verifikasi QA."
+    echo -e "  ${DIM}Perbarui image ke v1.1.9 ke atas, lalu ulangi.${NC}"
+    return
+  fi
+
   # ── Tahap 1: PREVIEW ──────────────────────────────────────────
   echo -e "
   ${W}-- Deteksi --${NC}"
-  if ! docker compose run --rm migrate npx tsx prisma/reset-qa-verifikasi.ts; then
+  if ! docker compose run --rm migrate npx tsx "$skrip"; then
     err "Deteksi gagal. Periksa pesan di atas."
     return
   fi
@@ -3741,7 +3768,7 @@ ${W}  Verifikasi ulang dokumen QA${NC}"
   # ── Tahap 3: TERAPKAN ─────────────────────────────────────
   echo -e "
   ${W}-- Menjalankan --${NC}"
-  if ! docker compose run --rm migrate npx tsx prisma/reset-qa-verifikasi.ts --apply; then
+  if ! docker compose run --rm migrate npx tsx "$skrip" --apply; then
     err "Gagal atau sebagian gagal. Periksa pesan di atas."
     return
   fi
@@ -3749,7 +3776,7 @@ ${W}  Verifikasi ulang dokumen QA${NC}"
   # ── Tahap 4: PREVIEW HASIL ────────────────────────────────
   echo -e "
   ${W}-- Hasil akhir --${NC}"
-  docker compose run --rm migrate npx tsx prisma/reset-qa-verifikasi.ts || true
+  docker compose run --rm migrate npx tsx "$skrip" || true
 
   echo ""
   ok "Selesai. Lanjutkan dari aplikasi: Walidata kirim ulang email ke atasan."
@@ -3774,6 +3801,12 @@ ${W}  Pra-render thumbnail katalog${NC}"
   docker compose up -d postgres minio >/dev/null 2>&1 || {
     err "Gagal menyalakan postgres/minio."; return
   }
+
+  if [[ -z "$(_migrate_script prisma/prerender-thumbnails.ts)" ]]; then
+    err "Image yang terpasang belum punya pra-render thumbnail."
+    echo -e "  ${DIM}Perbarui image ke v1.1.12 ke atas, lalu ulangi.${NC}"
+    return
+  fi
 
   # ── Tahap 1: LAPORAN ──────────────────────────────────────────
   echo -e "
