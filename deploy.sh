@@ -2058,8 +2058,30 @@ fn_generate_env() {
     [[ -f ".env" ]]               && warn "  → .env"
     [[ -f "ext_serv-main/.env" ]] && warn "  → ext_serv-main/.env"
     echo ""
+    echo ""
+    err "MENIMPA .env AKAN MEREGENERASI SELURUH SECRET."
+    echo -e "  ${DIM}APP_SECRET/JWT_SECRET yang baru TIDAK bisa membuka data yang sudah${NC}"
+    echo -e "  ${DIM}terenkripsi memakai yang lama. Yang akan HILANG PERMANEN:${NC}"
+    echo -e "  ${DIM}  - passphrase sertifikat PKI  -> tanda tangan digital mati${NC}"
+    echo -e "  ${DIM}  - password BSRE dan SMTP     -> harus dimasukkan ulang${NC}"
+    echo -e "  ${DIM}Untuk sekadar menyesuaikan .env dengan versi baru, pakai menu v${NC}"
+    echo -e "  ${DIM}(Verifikasi .env) yang hanya menambah kunci yang kurang.${NC}"
+    echo ""
     read -rp "  Timpa dan buat ulang? (y/N): " _ov
     [[ "${_ov,,}" == "y" ]] || { warn "Dibatalkan."; return; }
+
+    # Cadangkan SEBELUM menimpa. Tanpa ini, secret lama lenyap dan data yang
+    # terenkripsi dengannya tidak akan pernah bisa dibuka lagi — pernah terjadi
+    # di lapangan dan membuat sertifikat PKI sebuah instansi tidak terpakai.
+    _gen_stamp="$(date +%Y%m%d-%H%M%S)"
+    for _f in ".env" "ext_serv-main/.env"; do
+      if [[ -f "$_f" ]]; then
+        cp "$_f" "${_f}.bak-${_gen_stamp}"
+        chmod 600 "${_f}.bak-${_gen_stamp}" 2>/dev/null || true
+        ok "Cadangan: ${_f}.bak-${_gen_stamp}"
+      fi
+    done
+    warn "Simpan cadangan itu. Ia satu-satunya jalan memulihkan secret lama."
   fi
 
   # ── Auto-generate dari Excel (jika file konfigurasi tersedia) ────────────
