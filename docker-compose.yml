@@ -218,6 +218,14 @@ services:
       DOCKER_INTERNAL_HOST: "host.docker.internal"
       # DB_POOL_MAX: default 10 — naikkan ke 20-50 untuk server dengan RAM ≥ 8GB
       DB_POOL_MAX: "${DB_POOL_MAX:-10}"
+      # Ukuran threadpool libuv. Bawaan Node hanya 4, dan sharp (render
+      # thumbnail) mengantre pekerjaannya di sana — sementara pg membangun
+      # koneksi lewat dns.lookup() yang memakai threadpool yang SAMA. Empat
+      # thread yang penuh oleh render membuat pencarian DNS "postgres" tertahan
+      # sampai melewati connectionTimeoutMillis, lalu muncul sebagai
+      # "timeout exceeded when trying to connect" — galat basis data yang
+      # sebenarnya tidak ada hubungannya dengan basis data.
+      UV_THREADPOOL_SIZE: "${UV_THREADPOOL_SIZE:-16}"
     depends_on:
       postgres:
         condition: service_healthy
