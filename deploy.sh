@@ -3732,12 +3732,15 @@ fn_verify_env() {
 #
 # Mencetak nama skrip pertama yang benar-benar ada; kosong bila tidak satu pun.
 _migrate_script() {
+  # -T mematikan alokasi TTY dan "ls -1" memaksa satu nama per baris.
+  # Tanpa -T, docker compose run memberi pseudo-TTY sehingga ls memformat
+  # BERKOLOM dan menyisipkan CR — dua-duanya membuat pencocokan satu-baris-utuh
+  # di bawah gagal, sehingga skrip yang ADA dilaporkan tidak ada.
   local daftar
-  daftar="$(docker compose run --rm --entrypoint sh migrate -c 'ls prisma/ 2>/dev/null' 2>/dev/null | tr -d '
-')" || true
+  daftar="$(docker compose run --rm -T --entrypoint sh migrate -c 'ls -1 prisma/ 2>/dev/null' 2>/dev/null)" || true
   local k
   for k in "$@"; do
-    if grep -qx "${k#prisma/}" <<< "$daftar"; then echo "$k"; return 0; fi
+    if grep -qx -- "${k#prisma/}" <<< "$daftar"; then echo "$k"; return 0; fi
   done
   echo ""
 }
