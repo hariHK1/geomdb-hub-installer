@@ -2430,6 +2430,18 @@ MINIO_URL="http://localhost:{p_minio}"
 MINIO_ENDPOINT="localhost"
 MINIO_PORT="{p_minio}"
 MINIO_BUCKET="geomdb-hub"
+
+# ─── Penyetelan beban ─────────────────────────────────────────────────────────
+# Ukuran pool koneksi Postgres milik aplikasi. Bawaan 10; naikkan ke 20-50 bila
+# RAM server >= 8 GB. Pool habis muncul sebagai
+# "Connection terminated due to connection timeout" pada permintaan mana pun.
+DB_POOL_MAX="10"
+
+# Jumlah render thumbnail yang boleh berjalan BERSAMAAN di server. Tiap render
+# memakai sharp (CPU berat); terlalu banyak sekaligus menjenuhkan prosesor dan
+# menyendat seluruh aplikasi. Bawaan 2 — naikkan hanya bila CPU lega.
+THUMB_RENDER_CONCURRENCY="2"
+
 # Di Docker: di-override ke http://minio:9000
 
 # ─── pycsw ───────────────────────────────────────────────────
@@ -3205,6 +3217,18 @@ MINIO_URL="http://localhost:${P_MINIO}"
 MINIO_ENDPOINT="localhost"
 MINIO_PORT="${P_MINIO}"
 MINIO_BUCKET="geomdb-hub"
+
+# ─── Penyetelan beban ─────────────────────────────────────────────────────────
+# Ukuran pool koneksi Postgres milik aplikasi. Bawaan 10; naikkan ke 20-50 bila
+# RAM server >= 8 GB. Pool habis muncul sebagai
+# "Connection terminated due to connection timeout" pada permintaan mana pun.
+DB_POOL_MAX="10"
+
+# Jumlah render thumbnail yang boleh berjalan BERSAMAAN di server. Tiap render
+# memakai sharp (CPU berat); terlalu banyak sekaligus menjenuhkan prosesor dan
+# menyendat seluruh aplikasi. Bawaan 2 — naikkan hanya bila CPU lega.
+THUMB_RENDER_CONCURRENCY="2"
+
 # Di Docker: di-override ke http://minio:9000
 
 # ─── pycsw ───────────────────────────────────────────────────
@@ -3709,7 +3733,8 @@ fn_verify_env() {
 # Mencetak nama skrip pertama yang benar-benar ada; kosong bila tidak satu pun.
 _migrate_script() {
   local daftar
-  daftar="$(docker compose run --rm --entrypoint sh migrate -c 'ls prisma/ 2>/dev/null' 2>/dev/null | tr -d '')" || true
+  daftar="$(docker compose run --rm --entrypoint sh migrate -c 'ls prisma/ 2>/dev/null' 2>/dev/null | tr -d '
+')" || true
   local k
   for k in "$@"; do
     if grep -qx "${k#prisma/}" <<< "$daftar"; then echo "$k"; return 0; fi
