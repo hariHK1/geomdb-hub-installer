@@ -167,6 +167,14 @@ services:
       MINIO_URL: "http://minio:9000"
       MINIO_ENDPOINT: "minio"
       MINIO_PORT: "9000"
+      # Skrip perawatan di sini juga merender thumbnail (sharp), dan sharp
+      # mengantre pekerjaannya di threadpool libuv yang SAMA dengan yang dipakai
+      # pg dan redis untuk dns.lookup() saat membangun koneksi. Dengan bawaan
+      # Node yang cuma 4, penyapuan pra-render membuat koneksi ke postgres DAN
+      # redis time out berbarengan — terbukti di lapangan 30 Agustus 2026.
+      UV_THREADPOOL_SIZE: "${UV_THREADPOOL_SIZE:-16}"
+      # Batas render bersamaan; dibaca ThumbnailService (image v1.1.14 ke atas).
+      THUMB_RENDER_CONCURRENCY: "${THUMB_RENDER_CONCURRENCY:-2}"
     # Sengaja TIDAK depends_on minio: jalur migrasi inti tidak boleh ikut
     # terblokir bila MinIO bermasalah. Menu perawatan di deploy.sh yang
     # menyalakan minio lebih dulu.
