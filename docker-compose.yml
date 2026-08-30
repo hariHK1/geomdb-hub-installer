@@ -167,6 +167,14 @@ services:
       MINIO_URL: "http://minio:9000"
       MINIO_ENDPOINT: "minio"
       MINIO_PORT: "9000"
+      # Sama seperti MINIO_ENDPOINT di atas: .env memakai nilai sudut-pandang
+      # HOST (localhost), yang di dalam container mana pun menunjuk container itu
+      # sendiri. Pola ini sudah dua kali menggigit — MinIO, lalu Redis, yang
+      # membanjiri log penyapuan pra-render dengan "[redis] connection error".
+      # Ditutup sekalian untuk seluruh endpoint infrastruktur.
+      REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379"
+      PYCSW_URL: "http://pycsw:8000"
+      DB_POOL_MAX: "${DB_POOL_MAX:-10}"
       # Skrip perawatan di sini juga merender thumbnail (sharp), dan sharp
       # mengantre pekerjaannya di threadpool libuv yang SAMA dengan yang dipakai
       # pg dan redis untuk dns.lookup() saat membangun koneksi. Dengan bawaan
