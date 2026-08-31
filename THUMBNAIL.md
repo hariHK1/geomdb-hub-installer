@@ -87,8 +87,8 @@ atau tidak ada.
 | WMS GeoServer | ✓ | `GetMap` ✓ | `/reflect` ✓ | ✓ | **4** |
 | WMS non-GeoServer | ✓ | `GetMap` ✓ | `/reflect` ✗ | ✓ | **3** |
 | ArcGIS MapServer | ✓ | `/export` ✓ | `/info/thumbnail` ✓ | ✓ | **4** |
-| ArcGIS ImageServer | ✓ | `/export` ✓ | `/info/thumbnail` ✓ | ✓ | **4** |
-| ArcGIS FeatureServer | ✓ | `/export` ✗ | `/info/thumbnail` ✓ | ✓ | **3** |
+| ArcGIS ImageServer | ✓ | ✗ tidak dikenali | ✗ tidak dikenali | ✓ | **2** |
+| ArcGIS FeatureServer | ✓ | ✗ tidak dikenali | ✗ tidak dikenali | ✓ | **2** |
 | OGC WFS | ✓ | ✗ | ✗ | ✓ | **2** |
 | OGC WCS | ✓ | ✗ | ✗ | ✓ | **2** |
 | Unduhan / tautan | ✓ | ✗ | ✗ | ✓ | **2** |
@@ -98,11 +98,23 @@ kolom terakhir berkurang satu.
 
 ### Yang perlu diketahui operator
 
-**FeatureServer tidak punya `/export`.** Diuji langsung ke
-`geoportal.pertanian.go.id`: FeatureServer membalas `HTTP 400 — Output format
-not supported`, sedangkan MapServer pada server yang sama membalas PNG. Jadi
-record ArcGIS FeatureServer tidak akan pernah mendapat thumbnail komposit dan
-hanya bergantung pada `/info/thumbnail` atau field tersimpan.
+**Hanya MapServer yang dikenali di antara tipe ArcGIS.** `resolveLayerSource`
+mencocokkan `/MapServer` saja, sehingga URL `/FeatureServer` dan `/ImageServer`
+menghasilkan "tidak ada layanan" — lapis B dan C tidak pernah dicoba sama
+sekali, bukan dicoba lalu gagal.
+
+Dua hal terpisah yang mudah tertukar:
+
+- **Pengenalan.** FeatureServer & ImageServer tidak diresolusi jadi sumber layer.
+  Ini yang menentukan, dan berlaku lebih dulu.
+- **Endpoint.** Seandainya dikenali pun, FeatureServer memang tidak punya
+  `/export` — diuji ke `geoportal.pertanian.go.id`: `HTTP 400 — Output format
+  not supported`, sedangkan MapServer di server yang sama membalas PNG.
+  ImageServer memakai `/exportImage`, bukan `/export`.
+
+Dukungan keduanya belum ditambahkan karena belum ada datanya: dari seluruh
+metadata tersimpan, 28 sumber daya ArcGIS semuanya MapServer — FeatureServer 0,
+ImageServer 0. Menambahkannya sekarang hanya menebak kebutuhan yang belum ada.
 
 **WFS dan WCS praktis nol.** Keduanya mengembalikan data (GML, GeoTIFF), bukan
 gambar. Dua "jalur" yang tersisa hanya berharap sumbernya mencantumkan URL
