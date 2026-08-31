@@ -4,6 +4,9 @@ Aplikasi web manajemen metadata geospasial berbasis standar **SNI ISO 19115-3 / 
 
 ---
 
+Dokumen terkait: [THUMBNAIL.md](THUMBNAIL.md) — empat lapis jalur thumbnail dan
+mengapa sebagian tipe layanan tidak akan pernah punya pratinjau.
+
 ## Alur Proses Bisnis
 
 ### Peran Pengguna
