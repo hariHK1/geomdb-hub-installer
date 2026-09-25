@@ -29,7 +29,7 @@ services:
 
   # ─── MinIO (object storage) ──────────────────────────────────────────────────
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: geomdb_minio
     restart: unless-stopped
     logging: *default-logging
@@ -131,12 +131,11 @@ services:
       - NODE_ENV=production
       - PORT=${PORT_EXT_SERV:-3007}
       - WA_ENABLED=${WA_ENABLED:-true}
-      - WA_SESSION_DIR=/app/.wwebjs_auth
+      - WA_SESSION_DIR=/app/.baileys_auth
       - API_SECRET_KEY=${EXT_SERV_API_KEY:?EXT_SERV_API_KEY must be set in .env}
       - ALLOWED_ORIGINS=${NEXT_PUBLIC_APP_URL:-http://localhost:3000},http://localhost:${PORT_EXT_SERV:-3007}
     volumes:
-      - ext_serv_wa_session:/app/.wwebjs_auth
-      - ext_serv_wa_cache:/app/.wwebjs_cache
+      - ext_serv_wa_session:/app/.baileys_auth
       - ext_serv_uploads:/app/uploads
     shm_size: '512mb'
     cap_add:
@@ -316,7 +315,6 @@ volumes:
   certbot_etc:
   certbot_www:
   ext_serv_wa_session:
-  ext_serv_wa_cache:
   ext_serv_uploads:
 
 networks:
