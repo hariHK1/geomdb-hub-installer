@@ -195,7 +195,7 @@ _pick_install_method() {
 _ensure_infra_images() {
   local infra_images=(
     "postgis/postgis:16-3.4-alpine"
-    "quay.io/minio/minio:latest"
+    "pgsty/minio:RELEASE.2026-08-04T00-00-00Z"
     "redis:7-alpine"
     "geopython/pycsw:2.6.1"
   )
@@ -241,9 +241,9 @@ _ensure_infra_images() {
   echo -e "  ${R}Server baru terdeteksi — image infra belum ada di cache Docker.${NC}"
   echo ""
   echo -e "  ${W}Opsi A — Siapkan geomdb-infra-*.tar.gz dari mesin lain (direkomendasikan):${NC}"
-  echo "    docker pull postgis/postgis:16-3.4-alpine quay.io/minio/minio:latest \\"
+  echo "    docker pull postgis/postgis:16-3.4-alpine pgsty/minio:RELEASE.2026-08-04T00-00-00Z \\"
   echo "               redis:7-alpine geopython/pycsw:2.6.1"
-  echo "    docker save postgis/postgis:16-3.4-alpine quay.io/minio/minio:latest \\"
+  echo "    docker save postgis/postgis:16-3.4-alpine pgsty/minio:RELEASE.2026-08-04T00-00-00Z \\"
   echo "                redis:7-alpine geopython/pycsw:2.6.1 \\"
   echo "      | gzip > geomdb-infra-v1.tar.gz"
   echo "    # Salin geomdb-infra-v1.tar.gz ke folder ini, lalu jalankan deploy lagi."

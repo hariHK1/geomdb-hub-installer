@@ -29,7 +29,7 @@ services:
 
   # ─── MinIO (object storage) ──────────────────────────────────────────────────
   minio:
-    image: quay.io/minio/minio:latest
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     container_name: geomdb_minio
     restart: unless-stopped
     logging: *default-logging
