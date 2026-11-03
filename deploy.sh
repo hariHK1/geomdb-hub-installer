@@ -190,21 +190,42 @@ _pick_install_method() {
   ok "Metode: ${INSTALL_METHOD}"
 }
 
-# Pastikan image infra tersedia di cache lokal (untuk mode tarball/offline).
-# Urutan: cache lokal → geomdb-infra-*.tar.gz → instruksi manual.
-_ensure_infra_images() {
-  local infra_images=(
-    "postgis/postgis:16-3.4-alpine"
-    "pgsty/minio:RELEASE.2026-08-04T00-00-00Z"
-    "redis:7-alpine"
-    "geopython/pycsw:2.6.1"
-  )
+# Image sebuah layanan menurut docker-compose.yml (kosong bila tidak ditemukan).
+# Satu sumber kebenaran daftar image infra: daftar tulis-tangan pernah tertinggal saat
+# MinIO diganti pgsty/silo, sehingga mode tarball mencari image yang tidak dipakai lagi.
+# Workflow rilis memakai fungsi ini juga untuk menyusun bundle infra.
+_compose_image() {
+  awk -v svc="$1" -v q="'" '
+    { sub(/\r$/, "") }
+    /^[^ \t#]/ { di_services = ($0 ~ /^services:[ \t]*$/); layanan = ""; next }
+    di_services && /^  [^ \t#][^:]*:[ \t]*$/ { layanan = $1; sub(/:$/, "", layanan); next }
+    di_services && layanan == svc && /^    image:/ {
+      sub(/^    image:[ \t]*/, ""); sub(/[ \t]+#.*$/, ""); gsub(/"/, ""); gsub(q, ""); print; exit
+    }
+  ' "${2:-docker-compose.yml}"
+}
 
-  local missing=()
-  for img in "${infra_images[@]}"; do
-    docker image inspect "$img" &>/dev/null || missing+=("$img")
+# Cetak (satu per baris) image yang belum ada di cache Docker lokal.
+_image_hilang() {
+  local img
+  for img in "$@"; do docker image inspect "$img" &>/dev/null || echo "$img"; done
+}
+
+# Pastikan image infra tersedia di cache lokal (untuk mode tarball/offline).
+# Urutan: cache lokal → bundle infra *.tar.gz → instruksi manual / pull.
+_ensure_infra_images() {
+  local infra_images=() svc img
+  for svc in postgres minio redis pycsw; do
+    img="$(_compose_image "$svc")"
+    if [[ -z "$img" ]]; then
+      err "Image layanan '${svc}' tidak terbaca dari docker-compose.yml."
+      return 1
+    fi
+    infra_images+=("$img")
   done
 
+  local missing=()
+  mapfile -t missing < <(_image_hilang "${infra_images[@]}")
   if [[ ${#missing[@]} -eq 0 ]]; then
     ok "Semua image infra tersedia di cache lokal."
     return 0
@@ -216,9 +237,13 @@ _ensure_infra_images() {
   done
   echo ""
 
-  # Cari bundle infra: nama lama (geomdb-infra-*.tar.gz) ATAU nama rilis baru (geomdb-hub-*-infra.tar.gz)
+  # Cari bundle infra: aset rilis (geomdb-hub-vX.Y.Z-infra.tar.gz, terbaru lebih dulu),
+  # lalu buatan sendiri (geomdb-infra-*.tar.gz, Opsi A di bawah).
   local infra_tars=()
-  mapfile -t infra_tars < <(ls geomdb-infra-*.tar.gz geomdb-hub-*-infra.tar.gz 2>/dev/null || true)
+  mapfile -t infra_tars < <(
+    ls geomdb-hub-*-infra.tar.gz 2>/dev/null | sort -rV
+    ls geomdb-infra-*.tar.gz 2>/dev/null | sort -rV
+  )
 
   if [[ ${#infra_tars[@]} -gt 0 ]]; then
     local infra_tar="${infra_tars[0]}"
@@ -233,20 +258,29 @@ _ensure_infra_images() {
     fi
     info "Memuat image infra dari ${infra_tar} (bisa beberapa menit)..."
     docker load < "$infra_tar"
-    ok "Image infra berhasil dimuat."
-    return 0
+    mapfile -t missing < <(_image_hilang "${infra_images[@]}")
+    if [[ ${#missing[@]} -eq 0 ]]; then
+      ok "Image infra berhasil dimuat."
+      return 0
+    fi
+    # Bundle rilis lama bisa berisi image yang sudah diganti (mis. pgsty/minio → pgsty/silo).
+    warn "${infra_tar} tidak berisi image berikut yang dipakai docker-compose.yml ini:"
+    for img in "${missing[@]}"; do
+      echo "    • $img"
+    done
+    echo ""
+  else
+    # Tidak ada cache dan tidak ada tarball infra — berikan instruksi
+    echo -e "  ${R}Server baru terdeteksi — image infra belum ada di cache Docker.${NC}"
+    echo ""
   fi
 
-  # Tidak ada cache dan tidak ada tarball infra — berikan instruksi
-  echo -e "  ${R}Server baru terdeteksi — image infra belum ada di cache Docker.${NC}"
-  echo ""
   echo -e "  ${W}Opsi A — Siapkan geomdb-infra-*.tar.gz dari mesin lain (direkomendasikan):${NC}"
-  echo "    docker pull postgis/postgis:16-3.4-alpine pgsty/minio:RELEASE.2026-08-04T00-00-00Z \\"
-  echo "               redis:7-alpine geopython/pycsw:2.6.1"
-  echo "    docker save postgis/postgis:16-3.4-alpine pgsty/minio:RELEASE.2026-08-04T00-00-00Z \\"
-  echo "                redis:7-alpine geopython/pycsw:2.6.1 \\"
+  echo "    for i in ${infra_images[*]}; do docker pull \"\$i\"; done"
+  echo "    docker save ${infra_images[*]} \\"
   echo "      | gzip > geomdb-infra-v1.tar.gz"
   echo "    # Salin geomdb-infra-v1.tar.gz ke folder ini, lalu jalankan deploy lagi."
+  echo "    # Atau unduh geomdb-hub-vX.Y.Z-infra.tar.gz dari halaman rilis versi yang sama."
   echo ""
   echo -e "  ${W}Opsi B — Pull langsung di server ini (butuh internet sementara):${NC}"
   echo "    docker compose pull postgres redis minio pycsw"
