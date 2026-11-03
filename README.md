@@ -499,7 +499,11 @@ Setiap perubahan status memicu notifikasi:
 | 443  | HTTPS                    |
 | 22   | SSH                      |
 
-Port internal (3000, 5432, 6379, 9000, 9001, 8080, 3007) **tidak perlu** dibuka ke publik — diakses oleh Nginx dan antar-container via Docker network.
+Port internal (3000, 5432, 6379, 9000, 9001, 8080, 3007) **tidak dibuka** ke jaringan — diakses oleh Nginx dan antar-container via Docker network.
+Sejak v1.1.37 `docker-compose.yml` mengikatnya ke `127.0.0.1` (variabel `INTERNAL_BIND` dan `APP_BIND` di `.env`),
+jadi hanya 80/443 yang terjangkau dari luar meskipun firewall belum dipasang (Docker melewati UFW).
+Mode tanpa Nginx (`USE_NGINX=false`) membuka port aplikasi ke jaringan (`APP_BIND=0.0.0.0`, diisi otomatis oleh `deploy.sh`).
+Akses jarak jauh ke layanan internal, misalnya MinIO console: `ssh -L 9001:127.0.0.1:9001 user@server`, lalu buka `http://localhost:9001`.
 
 ---
 

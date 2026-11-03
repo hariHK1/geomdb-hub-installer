@@ -28,7 +28,8 @@ cfg = tpl \
   .replace('${CSW_CONTACT_URL}',          os.environ.get('CSW_CONTACT_URL',          '')) \
   .replace('${CSW_CONTACT_HOURS}',        os.environ.get('CSW_CONTACT_HOURS',        '')) \
   .replace('${CSW_CONTACT_INSTRUCTIONS}', os.environ.get('CSW_CONTACT_INSTRUCTIONS', '')) \
-  .replace('${CSW_CONTACT_ROLE}',         os.environ.get('CSW_CONTACT_ROLE',         'pointOfContact'))
+  .replace('${CSW_CONTACT_ROLE}',         os.environ.get('CSW_CONTACT_ROLE',         'pointOfContact')) \
+  .replace('${PYCSW_ALLOWED_IPS}',        os.environ.get('PYCSW_ALLOWED_IPS', '').strip() or '127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')
 open('/tmp/pycsw.cfg', 'w').write(cfg)
 print("pycsw config written to /tmp/pycsw.cfg")
 EOF

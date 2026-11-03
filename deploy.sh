@@ -665,6 +665,26 @@ fn_pull() {
 }
 
 # ─── 3. Deploy ────────────────────────────────────────────────────────────────
+# Batas paparan port: dari jaringan hanya nginx (80/443) yang terbuka; port layanan lain
+# diikat ke alamat host di .env (INTERNAL_BIND, APP_BIND — bawaan 127.0.0.1, lihat
+# docker-compose.yml). .env instalasi lama belum punya kuncinya: dilengkapi di sini sebelum
+# container dijalankan, supaya mode tanpa Nginx (USE_NGINX=false) tidak kehilangan akses
+# ke aplikasi setelah update.
+_selaraskan_bind_env() {
+  [[ -f .env ]] || return 0
+  if ! grep -qE '^INTERNAL_BIND=' .env; then
+    printf '\n# Alamat host port postgres/redis/minio/pycsw/ext-serv. 127.0.0.1 = hanya dari server ini\n# (akses jarak jauh lewat SSH tunnel). Jangan 0.0.0.0 di server yang terhubung internet.\nINTERNAL_BIND=127.0.0.1\n' >> .env
+    info "INTERNAL_BIND=127.0.0.1 ditambahkan ke .env — port layanan internal hanya terbuka di localhost."
+  fi
+  if ! grep -qE '^APP_BIND=' .env; then
+    local _un _ab="127.0.0.1"
+    _un=$(grep -E '^USE_NGINX=' .env | tail -1 | cut -d= -f2- | tr -d "\"' \r")
+    [[ "${_un:-true}" == "false" ]] && _ab="0.0.0.0"
+    printf '\n# Alamat host port aplikasi (PORT_APP). 127.0.0.1 bila diakses lewat Nginx di server ini\n# (Docker maupun Nginx host); 0.0.0.0 bila diakses langsung tanpa Nginx, atau Nginx berada\n# di server lain (lebih aman: IP LAN server ini).\nAPP_BIND=%s\n' "$_ab" >> .env
+    info "APP_BIND=${_ab} ditambahkan ke .env."
+  fi
+}
+
 fn_deploy() {
   local env
   env=$(get_env)
@@ -673,6 +693,7 @@ fn_deploy() {
   echo "  ─────────────────────────────"
   confirm_production "deploy ke production" || return
   load_env
+  _selaraskan_bind_env
 
   # Pilih cara instalasi image aplikasi
   _pick_install_method
@@ -888,7 +909,7 @@ fn_db_menu() {
         ;;
       6)
         info "Membuka Prisma Studio di http://localhost:5555 ..."
-        docker compose run --rm -p 5555:5555 migrate npx prisma studio
+        docker compose run --rm -p 127.0.0.1:5555:5555 migrate npx prisma studio
         ;;
       0) return ;;
       *) warn "Pilihan tidak valid." ;;
@@ -1783,6 +1804,7 @@ fn_ssl_menu() {
 # ─── 3b. Deploy Lokal (tanpa Nginx) ──────────────────────────────────────────
 fn_deploy_local() {
   load_env
+  _selaraskan_bind_env
 
   local port="${PORT_APP:-3000}"
   echo -e "\n${W}  Deploy Lokal${NC} — akses di ${C}http://localhost:${port}${NC}"
@@ -1866,7 +1888,8 @@ fn_deploy_local() {
 
   # 8. Start app (tanpa nginx)
   info "Menjalankan app container..."
-  docker compose up -d --no-deps app
+  # Tanpa Nginx: aplikasi diakses langsung via port, jadi port app dibuka ke jaringan.
+  APP_BIND=0.0.0.0 docker compose up -d --no-deps app
   ok "App running."
 
   echo ""
@@ -3454,6 +3477,7 @@ EXTENV
 # ─── r. Start/restart containers (tanpa rebuild) ─────────────────────────────
 fn_start_containers() {
   load_env
+  _selaraskan_bind_env
   echo -e "\n${W}  Start/Restart Containers${NC} — tanpa rebuild image"
   echo "  ─────────────────────────────"
   echo -e "  ${DIM}Gunakan menu ini jika container mati (server reboot, docker stop, dsb).${NC}"
@@ -3475,7 +3499,8 @@ fn_start_containers() {
       ;;
     2)
       info "Menjalankan containers tanpa nginx..."
-      docker compose up -d --remove-orphans --scale nginx=0 postgres redis minio pycsw app migrate ext-serv
+      # Tanpa Nginx: aplikasi diakses langsung via port, jadi port app dibuka ke jaringan.
+      APP_BIND=0.0.0.0 docker compose up -d --remove-orphans --scale nginx=0 postgres redis minio pycsw app migrate ext-serv
       ok "Containers running (tanpa nginx)."
       echo ""
       echo -e "  ${W}Akses aplikasi: ${C}http://$(hostname -I | awk '{print $1}'):${PORT_APP:-3000}${NC}"

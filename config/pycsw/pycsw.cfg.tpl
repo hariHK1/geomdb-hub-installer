@@ -43,7 +43,7 @@ contact_role=${CSW_CONTACT_ROLE}
 
 [manager]
 transactions=true
-allowed_ips=*
+allowed_ips=${PYCSW_ALLOWED_IPS}
 uploaddir=/tmp
 
 [repository]
