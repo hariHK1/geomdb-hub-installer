@@ -8,7 +8,9 @@ x-logging: &default-logging
 services:
   # ─── PostgreSQL with PostGIS ─────────────────────────────────────────────────
   postgres:
-    image: postgis/postgis:16-3.4-alpine
+    # Lini PostGIS 3.5: ikut di-rebuild tiap rilis minor PostgreSQL (lini 3.4 berhenti di 16.4). Katalog
+    # ekstensi database lama diperbarui otomatis oleh deploy.sh (perbarui_ekstensi_postgis).
+    image: postgis/postgis:16-3.5-alpine
     container_name: geomdb_postgres
     restart: unless-stopped
     logging: *default-logging

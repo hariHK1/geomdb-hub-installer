@@ -719,6 +719,28 @@ _selaraskan_bind_env() {
   fi
 }
 
+# Image PostGIS bisa naik versi (mis. lini 16-3.4 -> 16-3.5) sementara katalog ekstensi di database lama
+# tetap versi lama sampai di-UPDATE. Dijalankan tiap deploy setelah postgres siap; aman diulang karena hanya
+# menyentuh ekstensi yang versinya tertinggal dari versi bawaan image.
+perbarui_ekstensi_postgis() {
+  local db ext diubah=0
+  for db in $(docker compose exec -T postgres psql -U geomdb -d postgres -tAc \
+      "SELECT datname FROM pg_database WHERE datallowconn AND datname <> 'template0'" </dev/null 2>/dev/null | tr -d '\r'); do
+    for ext in $(docker compose exec -T postgres psql -U geomdb -d "$db" -tAc \
+        "SELECT e.extname FROM pg_extension e JOIN pg_available_extensions a ON a.name = e.extname
+         WHERE e.extname LIKE 'postgis%' AND e.extversion <> a.default_version
+         ORDER BY (e.extname <> 'postgis'), e.extname" </dev/null 2>/dev/null | tr -d '\r'); do
+      if docker compose exec -T postgres psql -U geomdb -d "$db" -v ON_ERROR_STOP=1 -qtAc "ALTER EXTENSION $ext UPDATE" </dev/null &>/dev/null; then
+        diubah=$((diubah + 1))
+      else
+        warn "Ekstensi $ext di database $db gagal diperbarui — jalankan manual: ALTER EXTENSION $ext UPDATE;"
+      fi
+    done
+  done
+  [[ $diubah -gt 0 ]] && ok "Ekstensi PostGIS diperbarui mengikuti image baru ($diubah ekstensi)."
+  return 0
+}
+
 fn_deploy() {
   local env
   env=$(get_env)
@@ -765,6 +787,7 @@ fn_deploy() {
     sleep 2
   done
   ok "Postgres ready."
+  perbarui_ekstensi_postgis
 
   # 4. Migrasi DB
   info "Jalankan migrasi DB..."
@@ -1880,6 +1903,7 @@ fn_deploy_local() {
     sleep 2
   done
   ok "Postgres ready."
+  perbarui_ekstensi_postgis
 
   # 4. Migrasi DB
   info "Jalankan migrasi DB..."
