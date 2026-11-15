@@ -8,7 +8,9 @@ maxrecords=100
 pretty_print=false
 domaincounts=true
 domainquerytype=range
-spatial_ranking=true
+# spatial_ranking butuh fungsi PL/Python get_spatial_overlay_rank di database, yang tidak tersedia di
+# image PostGIS; bila true, setiap filter BBOX gagal "Invalid query syntax".
+spatial_ranking=false
 profiles=apiso
 timeout=30
 workers=2

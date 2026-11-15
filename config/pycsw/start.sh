@@ -34,4 +34,17 @@ open('/tmp/pycsw.cfg', 'w').write(cfg)
 print("pycsw config written to /tmp/pycsw.cfg")
 EOF
 
+# pycsw 2.6 tidak mengenal kode bahasa "id" (language=id di config), sehingga setiap permintaan mencatat
+# traceback "Could not set language". Daftarkan "id" dengan konfigurasi full-text search "english", sama dengan
+# yang sudah dipakai trigger tabel records dan kueri, jadi hasil pencarian tidak berubah. Tidak fatal.
+python3 - <<'PY' || true
+try:
+    import pycsw.core.config as c
+    s = open(c.__file__).read()
+    if "'id':" not in s and "'en': 'english'," in s:
+        open(c.__file__, 'w').write(s.replace("'en': 'english',", "'en': 'english',\n            'id': 'english',", 1))
+except Exception as e:
+    print("lewati pendaftaran bahasa id:", e)
+PY
+
 exec python3 /usr/local/bin/entrypoint.py
