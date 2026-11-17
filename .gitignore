@@ -57,8 +57,8 @@ config/nginx/certs/*
 /memory/
 
 # file installer lokal (tidak bagian dari source)
+# config-instalasi.xlsx SENGAJA di-track: form kosong yang dibaca menu 9.
 /gen_env_from_excel.py
-/config-instalasi.xlsx
 
 # Python bytecode cache
 __pycache__/

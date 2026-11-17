@@ -2305,6 +2305,34 @@ fn_generate_env() {
         fi
       fi
 
+      # ── 5. Keamanan & validasi layer (kunci wajib, Bagian 7 Excel) ────────
+      # Isian Excel jadi default, tetapi tetap dikonfirmasi & divalidasi di sini
+      # dengan aturan yang sama seperti menu v — form lama tanpa Bagian 7 pun
+      # tetap jalan (operator mengetik langsung).
+      local _xl_kw
+      _xl_kw="$(python3 - "$_excel_file" <<'GEOMDB_XLKW_EOF' 2>/dev/null || true
+import sys, openpyxl
+ws = openpyxl.load_workbook(sys.argv[1], data_only=True).active
+for r in ws.iter_rows(min_row=2, values_only=True):
+    if r and r[0] in ("SSRF_TRUSTED_DOMAINS", "ARCGIS_PROBE_DOMAINS", "VALIDASI_LAYER_WMS"):
+        v = r[2] if len(r) > 2 and r[2] is not None else ""
+        print(f"{r[0]}={str(v).strip()}")
+GEOMDB_XLKW_EOF
+)"
+      echo ""
+      echo -e "  ${W}┌─ Keamanan & Validasi Layer ───────────────────────────────────┐${NC}"
+      echo -e "  ${DIM}Tiga isian ini WAJIB — nilai dari Excel (Bagian 7) jadi default.${NC}"
+      echo -e "  ${DIM}Bisa diubah lagi nanti lewat menu v (Verifikasi .env).${NC}"
+      local _xl_k _xl_ssrf _xl_arcgis _xl_vlayer
+      for _xl_k in SSRF_TRUSTED_DOMAINS ARCGIS_PROBE_DOMAINS VALIDASI_LAYER_WMS; do
+        _tanya_kunci_wajib "$_xl_k" "$(grep -m1 "^${_xl_k}=" <<< "$_xl_kw" | cut -d= -f2- || true)" "Nilai dari Excel"
+        case "$_xl_k" in
+          SSRF_TRUSTED_DOMAINS) _xl_ssrf="$_KW_NILAI" ;;
+          ARCGIS_PROBE_DOMAINS) _xl_arcgis="$_KW_NILAI" ;;
+          VALIDASI_LAYER_WMS)   _xl_vlayer="$_KW_NILAI" ;;
+        esac
+      done
+
       # ── Generate .env dari Excel + pilihan (script inline) ────────────────
       echo ""
       echo -e "  ${DIM}Membuat .env dari data Excel + pilihan di atas...${NC}"
@@ -2431,6 +2459,8 @@ def generate(cfg):
     tel=cfg.get("SEED_ADMIN_TELEPON","").strip()
     gnet=cfg.get("GEOPORTAL_NETWORK","").strip()
     arcgis_probe_domains=cfg.get("ARCGIS_PROBE_DOMAINS","go.id").strip() or "go.id"
+    ssrf_trusted_domains=cfg.get("SSRF_TRUSTED_DOMAINS","").strip()
+    validasi_layer_wms=cfg.get("VALIDASI_LAYER_WMS","").strip() or "TRUE"
     mu=cfg.get("MINIO_USER","").strip() or "geomdb_minio"
     sn=cfg.get("GEOMDB_SUBNET","").strip() or "172.28.0.0/24"
     wa=yn(cfg.get("_WA_ENABLED"),False); wa_s="true" if wa else "false"
@@ -2593,11 +2623,17 @@ EXT_SERV_URL="http://localhost:{p_ext}"
 EXT_SERV_API_KEY="{sk}"
 # Di Docker: EXT_SERV_URL di-override ke http://ext-serv:3007
 
-# ─── ArcGIS probe allowlist ───────────────────────────────────
+# ─── Keamanan & validasi layer (wajib — cek ulang via menu v) ─
+# Domain server geo instansi yang resolve ke IP internal. Diloloskan SEBELUM
+# cek DNS/IP, jadi sebutkan sesempit mungkin; MENGGANTI bawaan
+# .big.go.id,.ina-sdi.or.id. Titik di depan = semua subdomain. Jangan .go.id.
+SSRF_TRUSTED_DOMAINS={ssrf_trusted_domains}
 # Domain yang diizinkan untuk probe ketersediaan service ArcGIS (publik, tanpa login).
-# Pisahkan dengan koma. Subdomain otomatis diizinkan (go.id → *.go.id).
-# Kosongkan untuk memblokir semua probe dari publik.
+# Pisahkan dengan koma, tanpa titik di depan. Subdomain otomatis ikut (go.id → *.go.id).
 ARCGIS_PROBE_DOMAINS={arcgis_probe_domains}
+# Validasi layer Sumber Daya Online saat metadata diajukan (aplikasi v1.1.36+).
+# TRUE = ketat (layer tak ada/ambigu memblokir), FALSE = longgar (hanya peringatan).
+VALIDASI_LAYER_WMS={validasi_layer_wms}
 
 # ─── Health check (monitoring) ───────────────────────────────
 # Dipakai oleh tools monitoring (Uptime Kuma, Prometheus, dll.)
@@ -2726,6 +2762,10 @@ def preview(cfg):
     sep(); row("WhatsApp OTP:",wa_lbl)
     if gnet: row("Geoportal Network:",gnet)
     sep()
+    row("SSRF Domain Tepercaya:",cfg.get("SSRF_TRUSTED_DOMAINS",""))
+    row("Domain Probe ArcGIS:",cfg.get("ARCGIS_PROBE_DOMAINS",""))
+    row("Validasi Layer WMS:","TRUE (ketat)" if cfg.get("VALIDASI_LAYER_WMS")=="TRUE" else "FALSE (longgar)")
+    sep()
     row("CSW Judul:",ct); row("CSW Penyedia:",cp)
     row("CSW Kontak:",f"{ccn} / {cce or chr(8212)}"); row("CSW Kota:",f"{ccc}, {ccpv}")
     print("  └──────────────────────────────────────────────────────────────────┘")
@@ -2750,6 +2790,10 @@ custom_img_arg=sys.argv[8] if len(sys.argv)>8 else None
 print(); info(f"Membaca konfigurasi dari: {xlsx}")
 cfg=load_excel(xlsx)
 cfg["_GEOPORTAL"]=geo; cfg["_USE_NGINX"]=un; cfg["_EXT_NGINX"]=en; cfg["_WA_ENABLED"]=wa
+# Kunci wajib keamanan/validasi layer: ditanya & divalidasi di terminal (argv[9..11]),
+# bukan dari Excel — form Excel tidak memuatnya.
+for _i,_k in ((9,"SSRF_TRUSTED_DOMAINS"),(10,"ARCGIS_PROBE_DOMAINS"),(11,"VALIDASI_LAYER_WMS")):
+    if len(sys.argv)>_i and sys.argv[_i].strip(): cfg[_k]=sys.argv[_i].strip()
 # GEOPORTAL_NETWORK diambil dari terminal (argv[6]), bukan Excel — agar bisa deteksi network live
 if gnet_arg is not None: cfg["GEOPORTAL_NETWORK"]=gnet_arg
 if custom_path_arg: cfg["_CUSTOM_PATH"]=custom_path_arg
@@ -2763,7 +2807,7 @@ if errs:
 preview(cfg)
 generate(cfg)
 GEOMDB_PY_EOF
-      python3 "$_py_tmp" "$_excel_file" "$_xl_geoportal" "$_xl_use_nginx" "$_xl_ext_nginx" "$_xl_wa" "$_xl_gnet" "$_xl_custom_path" "$_xl_custom_img"
+      python3 "$_py_tmp" "$_excel_file" "$_xl_geoportal" "$_xl_use_nginx" "$_xl_ext_nginx" "$_xl_wa" "$_xl_gnet" "$_xl_custom_path" "$_xl_custom_img" "$_xl_ssrf" "$_xl_arcgis" "$_xl_vlayer"
       _py_rc=$?
       rm -f "$_py_tmp"
       if [[ $_py_rc -eq 0 ]]; then
@@ -3076,14 +3120,16 @@ GEOMDB_PY_EOF
   read -rp "  Aktifkan fitur WhatsApp OTP? (y/N): " _v
   [[ "${_v,,}" == "y" ]] && wa_enabled="true"
 
-  # ── ArcGIS probe allowlist ────────────────────────────────────────────────
-  echo ""
-  echo -e "  ${W}Domain ArcGIS yang boleh diprobe tanpa login (publik):${NC}"
-  echo -e "  ${DIM}Pengguna publik dapat memeriksa ketersediaan service ArcGIS dari domain ini.${NC}"
-  echo -e "  ${DIM}Pisahkan dengan koma. Subdomain otomatis diizinkan (go.id → *.go.id).${NC}"
-  echo -e "  ${DIM}Kosongkan untuk memblokir semua probe dari publik.${NC}"
-  read -rp "  Domain ArcGIS [go.id]: " _v
-  local ARCGIS_PROBE_DOMAINS="${_v:-go.id}"
+  # ── Keamanan & validasi layer (kunci wajib, lihat _ENV_WAJIB_KEYS) ────────
+  echo -e "\n  ${W}┌─ Keamanan & Validasi Layer ───────────────────────────────────┐${NC}"
+  echo -e "  ${DIM}Tiga isian ini WAJIB dan tidak punya default — baca hint tiap kunci.${NC}"
+  echo -e "  ${DIM}Bisa diubah lagi nanti lewat menu v (Verifikasi .env).${NC}"
+  _tanya_kunci_wajib SSRF_TRUSTED_DOMAINS
+  local SSRF_TRUSTED_DOMAINS="$_KW_NILAI"
+  _tanya_kunci_wajib ARCGIS_PROBE_DOMAINS
+  local ARCGIS_PROBE_DOMAINS="$_KW_NILAI"
+  _tanya_kunci_wajib VALIDASI_LAYER_WMS
+  local VALIDASI_LAYER_WMS="$_KW_NILAI"
 
   # ── CSW / Identitas Layanan Metadata ─────────────────────────────────────
   echo -e "\n  ${W}┌─ Identitas Layanan CSW ──────────────────────────────────────┐${NC}"
@@ -3205,6 +3251,11 @@ GEOMDB_PY_EOF
   echo    "  ├──────────────────────────────────────────────────────────────────┤"
   local _wa_label; [[ "$wa_enabled" == "true" ]] && _wa_label="Aktif (Baileys)" || _wa_label="Nonaktif (skip Baileys)"
   printf  "  │  %-28s %-37s│\n" "WhatsApp OTP:"        "$_wa_label"
+  echo    "  ├──────────────────────────────────────────────────────────────────┤"
+  printf  "  │  %-28s %-37s│\n" "SSRF Domain Tepercaya:" "${SSRF_TRUSTED_DOMAINS:0:37}"
+  printf  "  │  %-28s %-37s│\n" "Domain Probe ArcGIS:"   "${ARCGIS_PROBE_DOMAINS:0:37}"
+  local _vl_label; [[ "$VALIDASI_LAYER_WMS" == "TRUE" ]] && _vl_label="TRUE (ketat)" || _vl_label="FALSE (longgar)"
+  printf  "  │  %-28s %-37s│\n" "Validasi Layer WMS:"    "$_vl_label"
   echo    "  ├──────────────────────────────────────────────────────────────────┤"
   printf  "  │  %-28s %-37s│\n" "CSW Judul:"           "$CSW_TITLE"
   printf  "  │  %-28s %-37s│\n" "CSW Penyedia:"        "$CSW_PROVIDER_NAME"
@@ -3380,11 +3431,17 @@ EXT_SERV_URL="http://localhost:${P_EXT}"
 EXT_SERV_API_KEY="${SHARED_KEY}"
 # Di Docker: EXT_SERV_URL di-override ke http://ext-serv:3007
 
-# ─── ArcGIS probe allowlist ───────────────────────────────────
+# ─── Keamanan & validasi layer (wajib — cek ulang via menu v) ─
+# Domain server geo instansi yang resolve ke IP internal. Diloloskan SEBELUM
+# cek DNS/IP, jadi sebutkan sesempit mungkin; MENGGANTI bawaan
+# .big.go.id,.ina-sdi.or.id. Titik di depan = semua subdomain. Jangan .go.id.
+SSRF_TRUSTED_DOMAINS=${SSRF_TRUSTED_DOMAINS}
 # Domain yang diizinkan untuk probe ketersediaan service ArcGIS (publik, tanpa login).
-# Pisahkan dengan koma. Subdomain otomatis diizinkan (go.id → *.go.id).
-# Kosongkan untuk memblokir semua probe dari publik.
+# Pisahkan dengan koma, tanpa titik di depan. Subdomain otomatis ikut (go.id → *.go.id).
 ARCGIS_PROBE_DOMAINS=${ARCGIS_PROBE_DOMAINS}
+# Validasi layer Sumber Daya Online saat metadata diajukan (aplikasi v1.1.36+).
+# TRUE = ketat (layer tak ada/ambigu memblokir), FALSE = longgar (hanya peringatan).
+VALIDASI_LAYER_WMS=${VALIDASI_LAYER_WMS}
 
 # ─── Health check (monitoring) ───────────────────────────────
 # Dipakai oleh tools monitoring (Uptime Kuma, Prometheus, dll.)
@@ -3580,9 +3637,10 @@ fn_start_containers() {
 #     sering merupakan penyesuaian sengaja (mis. MINIO_ENDPOINT diarahkan ke IP
 #     server), bukan sisa versi lama.
 #   • Key tak dikenal template  → tanya per-key, default TIDAK. Template BUKAN
-#     daftar lengkap env aplikasi: mis. ARCGIS_PROBE_DOMAINS adalah allowlist
-#     SSRF yang dibaca kode tapi tidak pernah di-generate. Mengomentarinya akan
-#     mematikan fitur.
+#     daftar lengkap env aplikasi: mis. GEONODE_URL dibaca kode tapi hanya
+#     tertulis sebagai komentar di template. Mengomentarinya akan mematikan fitur.
+#   • Kunci wajib (_ENV_WAJIB_KEYS) → TIDAK ikut perbandingan template; selalu
+#     ditanyakan di setiap verifikasi, isian kosong ditolak (lihat _env_wajib).
 
 # Versi aplikasi: dari package.json (mode source) atau nama folder installer
 # (bundel rilis diekstrak sebagai geomdb-hub-v1.1.4/). Hanya untuk penanda
@@ -3649,9 +3707,12 @@ _env_compare() {
   _VE_BARU=(); _VE_ASING=(); _VE_BEDA=(); _VE_MANUAL=()
 
   local tpl_keys opt_keys file_keys k tval fval
-  tpl_keys="$(_env_tpl_keys "$marker")"
+  # Kunci wajib ditangani terpisah oleh _env_wajib — jangan sampai muncul lagi
+  # sebagai "beda"/"tak dikenal" lalu ditawari untuk dikomentari.
+  local wajib_re; wajib_re="^($(IFS='|'; echo "${_ENV_WAJIB_KEYS[*]}"))\$"
+  tpl_keys="$(_env_tpl_keys "$marker" | { grep -vE "$wajib_re" || true; })"
   opt_keys="$(_env_tpl_optional_keys "$marker")"
-  file_keys="$(_env_file_keys "$file")"
+  file_keys="$(_env_file_keys "$file" | { grep -vE "$wajib_re" || true; })"
 
   while read -r k; do
     [[ -z "$k" ]] && continue
@@ -3675,8 +3736,8 @@ _env_compare() {
     tval="$(_env_tpl_value "$marker" "$k")"
     [[ "$tval" == *'$'* ]] && continue
     tval="$(sed -E 's/^"(.*)"$/\1/' <<< "$tval")"
-    # Default kosong di template = "tidak berpendapat" (mis. ARCGIS_PROBE_DOMAINS),
-    # bukan "harus dikosongkan". Jangan tagih instansi yang sudah mengisinya.
+    # Default kosong di template = "tidak berpendapat", bukan "harus
+    # dikosongkan". Jangan tagih instansi yang sudah mengisinya.
     [[ -z "$tval" ]] && continue
     fval="$(_env_file_value "$file" "$k")"
     if [[ "$tval" != "$fval" ]]; then _VE_BEDA+=("$k|$fval|$tval"); fi
@@ -3766,6 +3827,165 @@ _env_apply() {
   return 0
 }
 
+# ─── Kunci wajib .env: ditanyakan di SETIAP verifikasi ───────────────────────
+# Ketiganya mengatur keamanan/validasi yang berbeda per instansi, dan tidak ada
+# nilai bawaan yang benar untuk semua: SSRF_TRUSTED_DOMAINS menunjuk server geo
+# internal masing-masing, ARCGIS_PROBE_DOMAINS domain ArcGIS yang boleh diprobe
+# publik, VALIDASI_LAYER_WMS ketat/longgar sesuai alur kerja instansi. Kosong di
+# .env berarti aplikasi diam-diam jatuh ke bawaannya — itu yang mau dicegah.
+_ENV_WAJIB_KEYS=(SSRF_TRUSTED_DOMAINS ARCGIS_PROBE_DOMAINS VALIDASI_LAYER_WMS)
+
+_env_wajib_hint() {
+  case "$1" in
+    SSRF_TRUSTED_DOMAINS)
+      echo "Domain server geo instansi yang resolve ke IP INTERNAL/intranet."
+      echo "Host di sini diloloskan SEBELUM cek DNS/IP — pintu keluar ke jaringan"
+      echo "internal lewat proksi publik, jadi sebutkan sesempit mungkin."
+      echo "• Pisahkan dengan koma; nama domain saja (tanpa http://, path, port, IP)."
+      echo "• Titik di depan = semua subdomain (.geoportal.kota.go.id); tanpa titik = host persis."
+      echo "• Nilai ini MENGGANTI bawaan .big.go.id,.ina-sdi.or.id — sertakan lagi bila masih perlu."
+      echo "• Jangan isi .go.id: siapa pun yang menguasai satu subdomain .go.id bisa masuk."
+      echo "Server geo yang resolve ke IP publik tidak perlu dicantumkan."
+      echo "Contoh: .big.go.id,.ina-sdi.or.id,geoserver.contohkota.go.id"
+      ;;
+    ARCGIS_PROBE_DOMAINS)
+      echo "Domain layanan ArcGIS yang boleh diprobe pengunjung publik (tanpa login)"
+      echo "untuk mengecek ketersediaan layanan dan thumbnail-nya."
+      echo "• Pisahkan dengan koma; nama domain saja, TANPA titik di depan."
+      echo "• Subdomain otomatis ikut (go.id → *.go.id)."
+      echo "• Hanya pembatas tambahan — URL tetap melewati validasi SSRF."
+      echo "Contoh: go.id   atau   arcgis.contohkota.go.id,big.go.id"
+      ;;
+    VALIDASI_LAYER_WMS)
+      echo "Validasi layer Sumber Daya Online (WMS/WFS/WCS/WMTS/ArcGIS) saat metadata diajukan."
+      echo "• TRUE  = ketat: layer yang tidak ada/ambigu di layanan MEMBLOKIR pengajuan."
+      echo "• FALSE = longgar: hanya peringatan — untuk metadata yang datanya belum terbit."
+      echo "URL bukan http/https, URL jaringan internal, dan nama layer kosong tetap memblokir."
+      echo "Berlaku untuk aplikasi v1.1.36 ke atas."
+      ;;
+  esac
+}
+
+# Rapikan + validasi isian satu kunci wajib. Nilai bersih ke stdout (return 0),
+# atau alasan penolakan ke stderr (return 1).
+_env_wajib_normalisasi() {
+  local k="$1" v="$2" d inti hasil=""
+  if [[ "$k" == VALIDASI_LAYER_WMS ]]; then
+    case "${v,,}" in
+      true|ketat|ya|y|yes|on|1)              echo "TRUE" ;;
+      false|longgar|tidak|n|no|off|0)        echo "FALSE" ;;
+      *) echo "Isi TRUE (ketat) atau FALSE (longgar)." >&2; return 1 ;;
+    esac
+    return 0
+  fi
+
+  local re='^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$'
+  # Sufiks yang dipakai bersama banyak pemilik — mempercayainya sama dengan
+  # mempercayai siapa saja (alasan .go.id dibuang dari bawaan aplikasi v1.1.22).
+  local publik=" id go.id or.id co.id ac.id sch.id web.id my.id net.id mil.id desa.id biz.id ponpes.id "
+  local -a bagian; IFS=',' read -ra bagian <<< "$v"
+  for d in ${bagian[@]+"${bagian[@]}"}; do
+    d="${d//[[:space:]]/}"; d="${d,,}"
+    [[ -z "$d" ]] && continue
+    # Aplikasi mencocokkan host === d atau host.endsWith('.' + d); titik di
+    # depan membuat entri ArcGIS tidak pernah cocok — buang saja.
+    if [[ "$k" == ARCGIS_PROBE_DOMAINS ]]; then d="${d#.}"; inti="$d"; else inti="${d#.}"; fi
+    if [[ ! "$inti" =~ $re ]]; then
+      echo "\"$d\" bukan nama domain yang sah (tanpa http://, path, port, atau *)." >&2; return 1
+    fi
+    if [[ "$inti" =~ ^[0-9.]+$ ]]; then
+      echo "\"$d\" adalah alamat IP — isi nama domainnya." >&2; return 1
+    fi
+    if [[ "$k" == SSRF_TRUSTED_DOMAINS ]] && { [[ "$publik" == *" $inti "* ]] || [[ "$d" == .* && "$inti" != *.* ]]; }; then
+      echo "\"$d\" terlalu luas — mencakup domain milik pihak lain. Sebutkan domain instansi sendiri." >&2; return 1
+    fi
+    [[ ",$hasil," == *",$d,"* ]] || hasil+="${hasil:+,}$d"
+  done
+  [[ -n "$hasil" ]] || { echo "Wajib diisi — tidak boleh kosong." >&2; return 1; }
+  echo "$hasil"
+}
+
+# Tanya satu kunci wajib (beserta hint-nya) sampai isiannya sah; hasil di
+# _KW_NILAI. $2 = nilai sekarang: bila ada, Enter mempertahankannya; bila
+# kosong, operator harus mengetik sendiri — contoh di hint, bukan default
+# diam-diam. $3 = label asal nilai $2 (mis. "Nilai sekarang", "Nilai dari Excel");
+# kosong = tidak ditampilkan (setup manual).
+# Dipakai bersama oleh wizard setup (menu 9, manual & Excel) dan Verifikasi .env.
+_tanya_kunci_wajib() {
+  local k="$1" kini="${2:-}" label="${3:-}" jawab line
+  _KW_NILAI=""
+  echo -e "\n  ${C}${k}${NC}"
+  while IFS= read -r line; do echo -e "  ${DIM}${line}${NC}"; done < <(_env_wajib_hint "$k")
+  if [[ -n "$label" ]]; then
+    if [[ -n "$kini" ]]; then echo -e "  ${label}: ${W}${kini}${NC}"
+    else echo -e "  ${label}: ${Y}(belum diisi)${NC}"; fi
+  fi
+  while true; do
+    if [[ -n "$kini" ]]; then read -rp "  ${k} [${kini}]: " jawab
+    else read -rp "  ${k}: " jawab; fi
+    jawab="${jawab:-$kini}"
+    if _KW_NILAI="$(_env_wajib_normalisasi "$k" "$jawab" 2>&1)"; then return 0; fi
+    echo -e "  ${R}✗${NC} ${_KW_NILAI}"
+  done
+}
+
+# Tanya ketiga kunci wajib untuk satu file .env lalu tulis yang berubah.
+# Nilai sekarang jadi default (Enter = pertahankan) asalkan sah; bila belum
+# ada, operator harus mengetik sendiri — contoh di hint, bukan default diam-diam.
+# Mengisi _VE_WAJIB_UBAH dengan jumlah kunci yang ditulis.
+_env_wajib() {
+  local file="$1" ver="$2" k kini ada nilai
+  local -a baru=()
+  _VE_WAJIB_UBAH=0
+
+  echo -e "\n  ${W}── Kunci wajib (ditanyakan di setiap verifikasi) ──${NC}"
+  echo -e "  ${DIM}Tekan Enter untuk mempertahankan nilai sekarang.${NC}"
+
+  for k in "${_ENV_WAJIB_KEYS[@]}"; do
+    kini="$(_env_file_value "$file" "$k")"
+    # Baris ganda: kami membaca yang pertama, docker compose memakai yang
+    # terakhir — tulis ulang semuanya supaya keduanya sepakat.
+    ada="$(grep -cE "^${k}=" "$file" || true)"
+    _tanya_kunci_wajib "$k" "$kini" "Nilai sekarang"
+    nilai="$_KW_NILAI"
+
+    if ((ada == 1)) && [[ "$nilai" == "$kini" ]]; then
+      info "  $k tetap."
+    else
+      baru+=("$k=$nilai")
+    fi
+  done
+
+  ((${#baru[@]})) || return 0
+
+  local stamp; stamp="$(date '+%Y%m%d-%H%M%S')"
+  # Tahap template di menu yang sama bisa sudah membuat backup di detik yang
+  # sama — jangan timpa, backup itu yang memuat .env asli.
+  if [[ ! -e "${file}.bak-${stamp}" ]]; then
+    cp "$file" "${file}.bak-${stamp}" && info "Backup: ${file}.bak-${stamp}"
+  fi
+
+  local item tambah=()
+  for item in "${baru[@]}"; do
+    k="${item%%=*}"
+    if grep -qE "^${k}=" "$file"; then
+      sed -i -E "s|^${k}=.*\$|${item}|" "$file"
+    else
+      tambah+=("$item")
+    fi
+    ok "  ${item}"
+  done
+  if ((${#tambah[@]})); then
+    { echo ""
+      echo "# --- Kunci wajib, diisi oleh Verifikasi .env (versi ${ver}) - ${stamp} ---"
+      for item in "${tambah[@]}"; do echo "$item"; done
+    } >> "$file"
+  fi
+  chmod 600 "$file" 2>/dev/null || true
+  _VE_WAJIB_UBAH=${#baru[@]}
+  return 0
+}
+
 fn_verify_env() {
   echo -e "\n${W}  Verifikasi .env${NC}"
   echo "  ---------------------------------------------"
@@ -3793,34 +4013,57 @@ fn_verify_env() {
     if (( ${#_VE_BARU[@]} + ${#_VE_ASING[@]} + ${#_VE_BEDA[@]} )); then any=1; fi
   done
 
+  local diterapkan=0
   if [[ "$any" == "0" ]]; then
-    echo ""; ok "Tidak ada yang perlu diubah — .env sudah sesuai versi ${ver}."
+    echo ""; ok "Template: tidak ada yang perlu diubah — .env sudah sesuai versi ${ver}."
+  else
+    # ── Tahap 2: KONFIRMASI ─────────────────────────────────────────────────
+    echo ""
+    echo -e "  ${Y}Backup otomatis dibuat sebelum perubahan (.bak-<timestamp>).${NC}"
+    read -rp "  Lanjut ke tahap perubahan? (y/N): " _yn
+    if [[ "${_yn,,}" == "y" ]]; then
+      # ── Tahap 3: TERAPKAN ───────────────────────────────────────────────
+      for i in "${!files[@]}"; do
+        [[ -f "${files[$i]}" ]] || continue
+        mapfile -t _VE_BARU  < <(grep -v '^$' <<< "${s_baru[$i]}")
+        mapfile -t _VE_ASING < <(grep -v '^$' <<< "${s_asing[$i]}")
+        mapfile -t _VE_BEDA  < <(grep -v '^$' <<< "${s_beda[$i]}")
+        if (( ${#_VE_BARU[@]} + ${#_VE_ASING[@]} + ${#_VE_BEDA[@]} )) ; then :; else continue; fi
+        echo -e "\n  ${W}${files[$i]}${NC}"
+        _env_apply "${files[$i]}" "$ver"
+      done
+      diterapkan=1
+    else
+      warn "Perubahan template dilewati — lanjut ke kunci wajib."
+    fi
+  fi
+
+  # ── Tahap 4: KUNCI WAJIB ──────────────────────────────────────────────────
+  # Tetap dijalankan walau template sudah sesuai: kunci ini sengaja tidak ikut
+  # perbandingan template dan selalu ditanyakan.
+  _VE_WAJIB_UBAH=0
+  if [[ -f ".env" ]]; then
+    _env_wajib ".env" "$ver"
+  else
+    warn ".env tidak ditemukan — kunci wajib dilewati."
+  fi
+
+  if (( ! diterapkan && ! _VE_WAJIB_UBAH )); then
+    echo ""; ok "Tidak ada berkas yang diubah."
     return
   fi
 
-  # ── Tahap 2: KONFIRMASI ───────────────────────────────────────────────────
-  echo ""
-  echo -e "  ${Y}Backup otomatis dibuat sebelum perubahan (.bak-<timestamp>).${NC}"
-  read -rp "  Lanjut ke tahap perubahan? (y/N): " _yn
-  [[ "${_yn,,}" == "y" ]] || { warn "Dibatalkan — tidak ada berkas yang diubah."; return; }
-
-  # ── Tahap 3: TERAPKAN ─────────────────────────────────────────────────────
-  for i in "${!files[@]}"; do
-    [[ -f "${files[$i]}" ]] || continue
-    mapfile -t _VE_BARU  < <(grep -v '^$' <<< "${s_baru[$i]}")
-    mapfile -t _VE_ASING < <(grep -v '^$' <<< "${s_asing[$i]}")
-    mapfile -t _VE_BEDA  < <(grep -v '^$' <<< "${s_beda[$i]}")
-    if (( ${#_VE_BARU[@]} + ${#_VE_ASING[@]} + ${#_VE_BEDA[@]} )) ; then :; else continue; fi
-    echo -e "\n  ${W}${files[$i]}${NC}"
-    _env_apply "${files[$i]}" "$ver"
-  done
-
-  # ── Tahap 4: PREVIEW HASIL ────────────────────────────────────────────────
+  # ── Tahap 5: PREVIEW HASIL ────────────────────────────────────────────────
   echo -e "\n  ${W}-- Hasil akhir --${NC}"
   for i in "${!files[@]}"; do
     [[ -f "${files[$i]}" ]] || continue
     _env_compare "${files[$i]}" "${markers[$i]}"
     _env_report  "${files[$i]}"
+  done
+  echo -e "\n  ${W}Kunci wajib (.env)${NC}"
+  local _k
+  for _k in "${_ENV_WAJIB_KEYS[@]}"; do
+    printf "      %-22s %s\n" "$_k" "$(_env_file_value .env "$_k")"
   done
 
   echo ""
